@@ -819,6 +819,28 @@ class _YDL_Logger:
         crashlog.write_log('[yt-dlp ERROR] ' + str(msg))
 
 
+def _patch_ytdlp_write_string():
+    """Neutraliza escrituras a sys.stdout/stderr cuyo .buffer es un str
+    (Android/Kivy): si write_string reventa con AttributeError, no deja
+    caer la descarga."""
+    try:
+        import yt_dlp.utils as _u
+        if getattr(_u, '_jonayo_patched', False):
+            return
+        _orig = _u.write_string
+
+        def _safe(s, out=None, *a, **kw):
+            try:
+                return _orig(s, out, *a, **kw)
+            except AttributeError:
+                return
+
+        _u.write_string = _safe
+        _u._jonayo_patched = True
+    except Exception:
+        pass
+
+
 class M(ScreenManager):
     def __init__(self, **kw):
         super().__init__(**kw)
@@ -1760,6 +1782,7 @@ class M(ScreenManager):
 
     def _download_thread(self, url):
         import yt_dlp
+        _patch_ytdlp_write_string()
         crashlog.write_log(f"Descarga iniciada modo={self.current_mode} res={self.current_quality}")
         try:
             self._dir_before = set(os.listdir(self.download_path))
@@ -1780,6 +1803,7 @@ class M(ScreenManager):
             'concurrent_fragment_downloads': 2,
             'windowsfilenames': True,
             'logger': _YDL_Logger(),
+            'noprogress': True,
             # YouTube bloquea con 403 los URLs del cliente web (y sin JS runtime
             # el nsig queda incompleto). tv/android devuelven formatos que se
             # descargan sin JS y a 1080p.
@@ -1895,6 +1919,8 @@ class M(ScreenManager):
     def _hook(self, d):
         if self.cancel_event.is_set():
             raise Exception('Cancelado por el usuario')
+        if self.paused:
+            raise Exception('Pausado por el usuario')
         if d['status'] == 'downloading':
             total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
             down = d.get('downloaded_bytes', 0)
@@ -2334,20 +2360,23 @@ class M(ScreenManager):
     def toggle_pause(self):
         if not self.downloading:
             return
-        self.paused = not self.paused
-        self.get_screen('downloading').pause_btn.text = '\u25b6  Reanudar' if self.paused else '\u2160  Pausar'
-        ydl = self.current_ydl
-        if ydl is not None:
-            try:
-                if self.paused:
-                    ydl.params['hooks'] = []
-                else:
-                    ydl.params['hooks'] = [self._hook]
-            except Exception:
-                pass
+        if not self.paused:
+            self.paused = True
+            self.cancel_event.set()
+            self.get_screen('downloading').pause_btn.text = '\u25b6  Reanudar'
+        else:
+            self.paused = False
+            self.cancel_event.clear()
+            self.get_screen('downloading').pause_btn.text = '\u2160  Pausar'
+            self._launch_download_thread()
 
     def cancel_download(self):
         if not self.downloading:
+            return
+        if self.paused:
+            self.paused = False
+            self.downloading = False
+            Clock.schedule_once(lambda dt: self._cancelled())
             return
         self.downloading = False
         self.cancel_event.set()
