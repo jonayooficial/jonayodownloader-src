@@ -76,7 +76,7 @@ jobs:
           cp incoming/*.apk fdroid/repo/
           mv fdroid_keystore.p12 fdroid/keystore.p12
           cat > fdroid/config.yml <<'EOF'
-          repo_url: https://jonayooficial.github.io/jonayodownloader-android/
+          repo_url: https://jonayooficial.github.io/jonayodownloader-android/repo/
           repo_name: Jonayo Downloader
           repo_description: Descargas y streaming de videos y musica (YouTube)
           repo_keyalias: ${{ secrets.RELEASE_KEY_ALIAS }}
@@ -111,13 +111,19 @@ jobs:
         run: |
           ls -la fdroid/repo/
 
+      - name: Stage for Pages (/repo/)
+        run: |
+          mkdir -p site/repo
+          cp -r fdroid/repo/. site/repo/
+          ls -la site/repo/
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: fdroid/repo
+          path: site
 
       - name: Deploy Pages
         id: deployment
