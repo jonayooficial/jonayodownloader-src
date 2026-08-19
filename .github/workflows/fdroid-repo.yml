@@ -90,6 +90,7 @@ jobs:
           keydname: CN=Jonayo Downloader, O=Jonayo, C=MX
           archive_older: 0
           EOF
+          chmod 600 fdroid/config.yml
           cat > fdroid/metadata/org.jonayo.jonayodownloader.yml <<'EOF2'
           Categories:
             - Multimedia
@@ -100,8 +101,8 @@ jobs:
           Description: |-
             App para descargar videos y musica de YouTube y ver streaming
             tipo reproductor.
-          RepoType: none
-          Repo: https://github.com/jonayooficial/jonayodownloader-android
+          RepoType: srclib
+          Repo: .
           CurrentVersion: 1.8.9
           CurrentVersionCode: 102410809
           EOF2
