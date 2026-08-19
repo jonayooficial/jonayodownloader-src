@@ -1229,7 +1229,6 @@ class M(ScreenManager):
 
     def play_stream(self, video, quality='720p'):
         """Streaming real: resuelve la URL temporal y la entrega a ffpyplayer."""
-        self._stream_quality_q = quality
         self._remove_from_queue(video)
         url=(video or {}).get('url') or ''
         if not url:
@@ -1548,15 +1547,6 @@ class M(ScreenManager):
                         fm=lambda x:f"{int(x//60)}:{int(x%60):02d}"
                         tml.text=f"{fm(pos)} / {fm(dur)}"; thin.value=min(1,max(0,pos/dur))
                     qlabel.text=safe_text(item.get('stream_quality','HD') if item else 'HD','HD')
-                    if state['mode']=='video' and v.state=='play' and (time.time()-t0[0])>8 and v.texture is None and not state['failed']:
-                        state['failed']=True
-                        crashlog.write_log('Streaming: sin textura en 8s -> fallback local')
-                        url=(item or {}).get('url') or ''
-                        d.dismiss()
-                        if url and str(source).startswith(('http://','https://')):
-                            Clock.schedule_once(lambda dt: self._fallback_play_download(url, item, getattr(self,'_stream_quality_q','720p')), 0.1)
-                        else:
-                            Clock.schedule_once(lambda dt: self._info('Reproductor','El reproductor no pudo renderizar el video.'), 0.1)
                     if state['mode']=='video' and v.state=='play' and not state['hidden'] and (time.time()-t0[0])>3:
                         hide_controls()
                     if dur and pos >= dur-0.7 and not state['ended']:
@@ -2488,6 +2478,11 @@ class M(ScreenManager):
 
     def _on_update_check(self, update):
         if not update:
+            Clock.schedule_once(lambda dt: self._info('Sin actualizaciones',
+                                                      f'Ya tienes la ultima version (v{APP_VERSION}).'))
+            return
+        from updater import _cmp_versions
+        if _cmp_versions(update.get('version', ''), update.get('current', APP_VERSION)) <= 0:
             Clock.schedule_once(lambda dt: self._info('Sin actualizaciones',
                                                       f'Ya tienes la ultima version (v{APP_VERSION}).'))
             return
