@@ -32,6 +32,8 @@ jobs:
 
       - name: Download APK (manual, fallback debug)
         if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           RUN_ID=$(gh api "repos/${{ github.repository }}/actions/workflows/build-apk.yml/runs?per_page=1&status=success" --jq '.workflow_runs[0].id // empty')
           if [ -z "$RUN_ID" ]; then
