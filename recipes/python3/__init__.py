@@ -12,7 +12,15 @@ class Python3RecipeNoGrp(Python3Recipe):
     # grpmodule.c usa la familia getgrent/setgrent/endgrent que bionic NO declara
     # en ningun nivel de API. El fix upstream llego solo a 3.13; con 3.12 (pin
     # impuesto por Cython 3.0.11) hay que excluir grp del configure generado.
-    patches = Python3Recipe.patches + ['patches/grp-disable.patch']
+    #
+    # bldlibrary-3.12: backport de gh-111225 / PR #115780 (CPython 3.13+). En 3.12
+    # los modulos de extension NO se enlazan contra libpython en Android, y al
+    # dlopearlos bionic no resuelve PyExc_* -> "cannot locate symbol PyExc_...".
+    # El patch anade MODULE_LDFLAGS=BLDLIBRARY (-L. -lpython3.12) y -fPIC.
+    patches = Python3Recipe.patches + [
+        'patches/grp-disable.patch',
+        'patches/bldlibrary-3.12.patch',
+    ]
 
     def apply_patch(self, filename, arch, build_dir=None):
         # p4a resuelve cada patch con join(get_recipe_dir(), filename). Al vivir
