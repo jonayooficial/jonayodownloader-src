@@ -252,3 +252,13 @@ Antes de copiarlo al repo, comprobar SIEMPRE:
 - [ ] Assets nuevos (ej. `assets/icons/*.png`) se copiaron enteros al repo.
 - [ ] Los workflows de `.github/workflows/` no se rompieron.
 - [ ] Compila: `python -m py_compile main.py crashlog.py updater.py`.
+
+**TRAMPA FIRMA LOCAL (APK parcheado con `tools/patch_apk.py` + `tools/sign_apk.py`):**
+`sign_apk.py` ANTES regeneraba la clave RSA en CADA ejecución → cada parcheo salía
+firmado con una clave distinta y Android daba `INSTALL_FAILED_UPDATE_INCOMPATIBLE:
+signatures do not match` al instalar sobre la versión previa (solo quedaba
+desinstalar). Ya está arreglado: `sign_apk.py` reutiliza `tools/key.pk8` y
+`tools/cert.pem` si existen (misma firma → el parcheo siguiente se instala encima
+como update normal). NO borrar esos archivos mientras se quiera actualizar sin
+desinstalar. Nota: la clave local de parcheo es DISTINTA de `release.keystore` del
+CI → para pasar del parcheo local al APK del CI hay que desinstalar igualmente.
