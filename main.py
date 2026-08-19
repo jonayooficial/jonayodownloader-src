@@ -1378,6 +1378,42 @@ class M(ScreenManager):
             return True
         return False
 
+    def _jni_fs(self, fs):
+        """Oculta/muestra las barras del sistema en el hilo de UI de Android."""
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            act = PythonActivity.mActivity
+
+            def _set():
+                try:
+                    decor = act.getWindow().getDecorView()
+                    flags = decor.getSystemUiVisibility()
+                    if fs:
+                        flags = flags | 0x1 | 0x2 | 0x4 | 0x200 | 0x1000
+                    else:
+                        flags = flags & ~(0x1 | 0x2 | 0x4 | 0x200 | 0x1000)
+                    decor.setSystemUiVisibility(flags)
+                except Exception as e:
+                    crashlog.write_log('Fullscreen fallo: ' + str(e)[:120])
+
+            act.runOnUiThread(_set)
+        except Exception as e:
+            crashlog.write_log('Fullscreen fallo: ' + str(e)[:120])
+
+    def _jni_orientation(self, landscape):
+        """Rota la app a horizontal/vertical para reproducir (como YouTube)."""
+        try:
+            from jnius import autoclass
+            ActivityInfo = autoclass('android.content.pm.ActivityInfo')
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            act = PythonActivity.mActivity
+            act.runOnUiThread(lambda: act.setRequestedOrientation(
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE if landscape
+                else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT))
+        except Exception as e:
+            crashlog.write_log('Orientacion fallo: ' + str(e)[:120])
+
     def _play_internal(self, source, item=None):
         """Reproductor interno tipo YouTube para archivos locales o streams HTTPS."""
         global Video
@@ -1414,8 +1450,8 @@ class M(ScreenManager):
             qlabel=B(text='HD',size_hint_x=None,width=dp(42),font_size=sp(9))
             rr(qlabel,SUR2,9,BORDER); draw_icon(qlabel,'quality')
             speed=B(text='',size_hint_x=None,width=dp(42)); rr(speed,SUR2,9,BORDER); draw_icon(speed,'speed')
-            fsb=B(text='',size_hint_x=None,width=dp(42)); rr(fsb,SUR2,9,BORDER); draw_icon(fsb,'fs')
-            cb=B(text='',size_hint_x=None,width=dp(42)); rr(cb,RED,9); draw_icon(cb,'close')
+            fsb=B(text='',size_hint_x=None,width=dp(52)); rr(fsb,SUR2,9,BORDER); draw_icon(fsb,'fs')
+            cb=B(text='',size_hint_x=None,width=dp(52)); rr(cb,RED,9); draw_icon(cb,'close')
             top.add_widget(qlabel); top.add_widget(speed); top.add_widget(fsb); top.add_widget(cb)
             root.add_widget(top)
 
@@ -1437,7 +1473,9 @@ class M(ScreenManager):
             thin=ProgressBar(max=1,value=0,size_hint=(1,None),height=dp(3),pos_hint={'x':0,'top':1})
             root.add_widget(thin)
 
-            d.add_widget(root); self._last_dialog=d; self._player_dialog=d; d.open()
+            d.add_widget(root); self._last_dialog=d; self._player_dialog=d
+            self._jni_orientation(True)
+            d.open()
             crashlog.write_log('Reproductor interno abierto: '+safe_text((item or {}).get('title'),os.path.basename(source)))
             t0=[time.time()]
             hide_ev=[None]
@@ -1516,15 +1554,7 @@ class M(ScreenManager):
 
             def toggle_fs(*_):
                 state['fs']=not state['fs']
-                try:
-                    from jnius import autoclass
-                    PythonActivity=autoclass('org.kivy.android.PythonActivity')
-                    decor=PythonActivity.mActivity.getWindow().getDecorView()
-                    flags=decor.getSystemUiVisibility()
-                    if state['fs']: flags |= 0x1|0x2|0x4|0x200|0x1000
-                    else: flags &= ~(0x1|0x2|0x4|0x200|0x1000)
-                    decor.setSystemUiVisibility(flags)
-                except Exception as e: crashlog.write_log('Fullscreen fallo: '+str(e)[:120])
+                self._jni_fs(state['fs'])
                 show_controls()
             fsb.bind(on_release=toggle_fs)
             cb.bind(on_release=lambda *_: d.dismiss())
@@ -1545,11 +1575,8 @@ class M(ScreenManager):
                         pass
                     self._play_temp = None
                 if state['fs']:
-                    try:
-                        from jnius import autoclass
-                        PythonActivity=autoclass('org.kivy.android.PythonActivity')
-                        PythonActivity.mActivity.getWindow().getDecorView().setSystemUiVisibility(0)
-                    except Exception: pass
+                    self._jni_fs(False)
+                self._jni_orientation(False)
                 for ev in hide_ev:
                     if ev:
                         try: ev.cancel()
@@ -2204,6 +2231,7 @@ class M(ScreenManager):
             d.add_widget(root)
             self._last_dialog = d
             self._player_dialog = d
+            self._jni_orientation(True)
             d.open()
             crashlog.write_log('Reproductor interno abierto: ' + os.path.basename(path))
             t0 = [time.time()]
@@ -2269,18 +2297,7 @@ class M(ScreenManager):
 
             def _toggle_fs(*_):
                 state['fs'] = not state['fs']
-                try:
-                    from jnius import autoclass
-                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                    decor = PythonActivity.mActivity.getWindow().getDecorView()
-                    flags = decor.getSystemUiVisibility()
-                    if state['fs']:
-                        flags = flags | 0x1 | 0x2 | 0x4 | 0x200 | 0x1000
-                    else:
-                        flags = flags & ~(0x1 | 0x2 | 0x4 | 0x200 | 0x1000)
-                    decor.setSystemUiVisibility(flags)
-                except Exception as e:
-                    crashlog.write_log('Fullscreen fallo: ' + str(e)[:120])
+                self._jni_fs(state['fs'])
             fsb.bind(on_release=_toggle_fs)
 
             def _on_dismiss(*_):
@@ -2302,12 +2319,8 @@ class M(ScreenManager):
                         pass
                     self._play_temp = None
                 if state['fs']:
-                    try:
-                        from jnius import autoclass
-                        PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                        PythonActivity.mActivity.getWindow().getDecorView().setSystemUiVisibility(0)
-                    except Exception:
-                        pass
+                    self._jni_fs(False)
+                self._jni_orientation(False)
                 try:
                     tick_ev.cancel()
                 except Exception:
