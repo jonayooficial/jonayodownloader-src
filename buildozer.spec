@@ -6,7 +6,7 @@ package.domain = org.jonayo
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 
-version = 1.8.8
+version = 1.8.9
 version.release = 1
 
 # Requisitos. ffmpeg se compila desde la recipe local (6.1.2) de python-for-android
@@ -18,7 +18,7 @@ version.release = 1
 # local recipes/python3, y el ensurepip bundlea pip 25.0.1 roto -> recipe local
 # recipes/hostpython3 sustituye la wheel bundleada por 26.2.1 (venv multi-arch
 # idempotente). ffpyplayer 4.5.1 es incompatible con ffmpeg 7/8.
-requirements = python3==3.12.14,hostpython3==3.12.14,kivy==2.3.1,yt-dlp,ffmpeg,requests,certifi,ffpyplayer
+requirements = python3==3.12.14,hostpython3==3.12.14,kivy==2.3.1,yt-dlp,ffmpeg,requests,certifi,openssl,ffpyplayer
 
 orientation = portrait
 fullscreen = 0

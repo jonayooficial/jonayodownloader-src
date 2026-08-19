@@ -5,7 +5,7 @@ if not os.environ.get("ANDROID_ARGUMENT"):
 
 import crashlog
 crashlog.install_crash_handler()
-crashlog.write_log("=== Inicio main.py (fusionado) v1.8.8 ===")
+crashlog.write_log("=== Inicio main.py (fusionado) v1.8.9 ===")
 
 import sys
 import json
@@ -32,6 +32,7 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.progressbar import ProgressBar
+from kivy.uix.slider import Slider
 from kivy.uix.modalview import ModalView
 Video = None
 
@@ -69,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '1.8.8'
+APP_VERSION = '1.8.9'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -90,6 +91,80 @@ def rr(w, c=SUR, r=16, border=None):
         if hasattr(w, '_line'):
             w._line.rounded_rectangle = (w.x, w.y, w.width, w.height, dp(r))
     w.bind(pos=sync, size=sync)
+    return w
+
+
+def draw_icon(w, kind, color=WHITE):
+    """Iconos vectoriales para Android. Nunca depende de glifos/emojis de fuente."""
+    import math
+    specs = {
+        'close': 2, 'fs': 8, 'music': 3, 'play': 3, 'pause': 2,
+        'next': 4, 'prev': 4, 'queue': 5, 'speed': 2, 'quality': 4,
+    }
+    with w.canvas.after:
+        Color(*color)
+        w._icon_lines = [Line(points=[0, 0, 0, 0], width=dp(2.0))
+                         for _ in range(specs.get(kind, 2))]
+
+    def sync(*_):
+        x, y, s, h = w.x, w.y, w.width, w.height
+        L = getattr(w, '_icon_lines', [])
+        if not L:
+            return
+        if kind == 'close':
+            m = dp(7); L[0].points = [x+m,y+m,x+s-m,y+h-m]; L[1].points = [x+s-m,y+m,x+m,y+h-m]
+        elif kind == 'fs':
+            m=dp(5); l=dp(7)
+            tl=(x+m,y+h-m); tr=(x+s-m,y+h-m); bl=(x+m,y+m); br=(x+s-m,y+m)
+            pts=[(tl[0],tl[1],tl[0]+l,tl[1]),(tl[0],tl[1],tl[0],tl[1]-l),
+                 (tr[0]-l,tr[1],tr[0],tr[1]),(tr[0],tr[1],tr[0],tr[1]-l),
+                 (bl[0],bl[1],bl[0]+l,bl[1]),(bl[0],bl[1],bl[0],bl[1]+l),
+                 (br[0]-l,br[1],br[0],br[1]),(br[0],br[1],br[0],br[1]+l)]
+            for ln,p in zip(L,pts): ln.points=list(p)
+        elif kind == 'play':
+            L[0].points=[x+s*.36,y+h*.25,x+s*.36,y+h*.75]
+            L[1].points=[x+s*.36,y+h*.25,x+s*.72,y+h*.5]
+            L[2].points=[x+s*.72,y+h*.5,x+s*.36,y+h*.75]
+        elif kind == 'pause':
+            m=dp(7); L[0].points=[x+m,y+m,x+m,y+h-m]; L[1].points=[x+s-m,y+m,x+s-m,y+h-m]
+        elif kind in ('next','prev'):
+            if kind == 'next':
+                L[0].points=[x+s*.28,y+h*.25,x+s*.28,y+h*.75]
+                L[1].points=[x+s*.28,y+h*.25,x+s*.62,y+h*.5]
+                L[2].points=[x+s*.62,y+h*.5,x+s*.28,y+h*.75]
+                L[3].points=[x+s*.75,y+h*.25,x+s*.75,y+h*.75]
+            else:
+                L[0].points=[x+s*.72,y+h*.25,x+s*.72,y+h*.75]
+                L[1].points=[x+s*.72,y+h*.25,x+s*.38,y+h*.5]
+                L[2].points=[x+s*.38,y+h*.5,x+s*.72,y+h*.75]
+                L[3].points=[x+s*.25,y+h*.25,x+s*.25,y+h*.75]
+        elif kind == 'queue':
+            for i,yy in enumerate((.30,.50,.70)):
+                L[i].points=[x+s*.22,y+h*yy,x+s*.78,y+h*yy]
+            L[3].points=[x+s*.22,y+h*.30,x+s*.22,y+h*.70]
+            L[4].points=[x+s*.78,y+h*.30,x+s*.78,y+h*.70]
+        elif kind == 'speed':
+            # reloj/velocidad: círculo aproximado + aguja
+            pts=[]
+            r=min(s,h)*.30; cx=x+s*.5; cy=y+h*.5
+            for i in range(24):
+                a=2*math.pi*i/24
+                pts += [cx+r*math.cos(a), cy+r*math.sin(a)]
+            L[0].points=pts
+            L[1].points=[cx,cy,cx+r*.65,cy+r*.45]
+        elif kind == 'quality':
+            # tres líneas que representan niveles de calidad
+            for i,ln in enumerate(L):
+                yy=y+h*(.28+i*.22); x2=x+s*(.45+i*.12)
+                ln.points=[x+s*.22,yy,x2,yy]
+        elif kind == 'music':
+            m=dp(5); cx=x+s*.34; cy=y+h*.68; r=dp(3.5)
+            pts=[]
+            for i in range(20):
+                a=2*math.pi*i/20; pts += [cx+r*math.cos(a),cy+r*math.sin(a)]
+            L[0].points=pts; L[1].points=[cx,cy-r,cx,y+h*.28]; L[2].points=[cx,y+h*.28,x+s*.55,y+h*.22]
+    w.bind(pos=sync, size=sync)
+    sync()
     return w
 
 
@@ -425,7 +500,7 @@ class Home(Base):
         if not items:
             self.trending_box.height=dp(90); self.trending_box.add_widget(Label(text='No hay tendencias disponibles',color=DIM,font_size=sp(11),size_hint_y=None,height=dp(70))); return
         self.trending_box.height=max(dp(92), dp(8+len(items[:4])*92))
-        for v in items[:4]: self.trending_box.add_widget(VideoRow(v,self.manager.open_options,menu_cb=self.manager.show_video_menu))
+        for v in items[:4]: self.trending_box.add_widget(VideoRow(v,self.manager.open_video_menu,menu_cb=self.manager.show_video_menu))
     def show_trending_error(self,msg):
         self.trending_box.clear_widgets(); self.trending_box.height=dp(90)
         self.trending_box.add_widget(Label(text='No se pudieron cargar las tendencias',color=DIM,font_size=sp(11),halign='center'))
@@ -441,7 +516,7 @@ class Search(Base):
         c.add_widget(ChipBar([('Todos','flame',''),('Videos','download',''),('Canales','yt',''),('Playlists','news','')],size_hint_y=None,height=dp(40)))
         box=BoxLayout(orientation='vertical',spacing=dp(8),size_hint_y=None); box.bind(minimum_height=box.setter('height')); self.results_box=box; c.add_widget(box)
     def set_query(self,q): self.query_field.text=q; self.results_box.clear_widgets(); self.results_box.add_widget(Label(text='Buscando...',color=DIM,size_hint_y=None,height=dp(50)))
-    def show_results(self,items): self.results_box.clear_widgets(); [self.results_box.add_widget(VideoRow(v,self.manager.open_options,menu_cb=self.manager.show_video_menu)) for v in items] if items else self.results_box.add_widget(Label(text='Sin resultados',color=DIM,size_hint_y=None,height=dp(50)))
+    def show_results(self,items): self.results_box.clear_widgets(); [self.results_box.add_widget(VideoRow(v,self.manager.open_video_menu,menu_cb=self.manager.show_video_menu)) for v in items] if items else self.results_box.add_widget(Label(text='Sin resultados',color=DIM,size_hint_y=None,height=dp(50)))
     def show_error(self,msg): self.results_box.clear_widgets(); self.results_box.add_widget(Label(text='Error de búsqueda: '+str(msg)[:60],color=ERR,size_hint_y=None,height=dp(50)))
 
 
@@ -539,9 +614,24 @@ class Downloads(Base):
             empty=Card(size_hint_y=None,height=dp(150)); empty.add_widget(Image(source=icon('download'),size_hint=(None,None),size=(dp(38),dp(38)))); empty.add_widget(Label(text='Aún no hay descargas',color=WHITE,font_size=sp(14),bold=True)); empty.add_widget(Label(text='Tus archivos completados aparecerán aquí.',color=MUTED,font_size=sp(9.5))); self.list_box.add_widget(empty); return
         for d in items:
             status=d.get('status',''); col=GREEN if status=='completado' else RED if status=='descargando' else ORANGE
-            row=ClickableBox(bg=SUR,radius=18,border=BORDER,size_hint_y=None,height=dp(102),orientation='horizontal',spacing=dp(9),padding=dp(8))
-            row.add_widget(Thumb(safe_text(d.get('title','')),'',d.get('color',0),d.get('thumb',''),width=110,height=78)); x=BoxLayout(orientation='vertical',spacing=dp(1)); x.add_widget(Label(text=safe_text(d.get('title','')),color=WHITE,font_size=sp(10.8),bold=True,halign='left',valign='middle',size_hint_y=None,height=dp(38),text_size=(None,None))); x.add_widget(Label(text=f"{d.get('quality','')} · {d.get('format','')}",color=MUTED,font_size=sp(8.8),halign='left')); x.add_widget(Label(text=status.capitalize(),color=col,font_size=sp(9.5),bold=True,halign='left')); row.add_widget(x)
-            more=B(text='···',color=MUTED,font_size=sp(14),size_hint_x=None,width=dp(28)); more.bind(on_release=lambda *_ , item=d:self.manager.show_download_menu(item)); row.add_widget(more); row.bind(on_release=lambda *_ , item=d:self.manager.play_download(item) if item.get('status')=='completado' else None); self.list_box.add_widget(row)
+            done = status=='completado'
+            row=BoxLayout(orientation='vertical',spacing=dp(6),padding=dp(8),size_hint_y=None,height=dp(152 if done else 102))
+            rr(row,SUR,18,BORDER)
+            top=ClickableBox(bg=(0,0,0,0),radius=0,border=None,orientation='horizontal',spacing=dp(9),size_hint_y=None,height=dp(78))
+            top.add_widget(Thumb(safe_text(d.get('title','')),'',d.get('color',0),d.get('thumb',''),width=110,height=78)); x=BoxLayout(orientation='vertical',spacing=dp(1)); x.add_widget(Label(text=safe_text(d.get('title','')),color=WHITE,font_size=sp(10.8),bold=True,halign='left',valign='middle',size_hint_y=None,height=dp(38),text_size=(None,None))); x.add_widget(Label(text=f"{d.get('quality','')} · {d.get('format','')}",color=MUTED,font_size=sp(8.8),halign='left')); x.add_widget(Label(text=status.capitalize(),color=col,font_size=sp(9.5),bold=True,halign='left')); top.add_widget(x)
+            row.add_widget(top)
+            if done:
+                top.bind(on_release=lambda *_ , item=d:self.manager.play_download(item))
+                acts=BoxLayout(size_hint_y=None,height=dp(40),spacing=dp(8))
+                pb=B(text='▶ Reproducir',font_size=sp(10.5)); rr(pb,SUR2,10,BORDER)
+                pb.bind(on_release=lambda *_ , item=d:self.manager.play_download(item))
+                fb=B(text='Carpeta',font_size=sp(10.5)); rr(fb,SUR2,10,BORDER)
+                fb.bind(on_release=lambda *_ , item=d:self.manager.open_folder())
+                db=B(text='Borrar',font_size=sp(10.5),color=WHITE); rr(db,RED,10)
+                db.bind(on_release=lambda *_ , item=d:self.manager.delete_download(item))
+                acts.add_widget(pb); acts.add_widget(fb); acts.add_widget(db)
+                row.add_widget(acts)
+            self.list_box.add_widget(row)
     def _match(self,d):
         f=self.filter
         if f=='Videos': return d.get('format')=='MP4'
@@ -750,6 +840,12 @@ class M(ScreenManager):
         self.current_quality = '1080p'
         self._last_dialog = None
         self._back_stack = []
+        self._play_temp = None
+        self.play_queue = []
+        self._stream_cache = {}
+        self._search_cache = {}
+        self._queue_dialog = None
+        self._player_dialog = None
 
         self.add_widget(Home(name='home'))
 
@@ -771,7 +867,38 @@ class M(ScreenManager):
             except Exception:
                 import traceback
                 crashlog.write_crash(traceback.format_exc())
+        self._ensure_ffmpeg()
+        self._cleanup_play_tmp()
         self._load_trending()
+
+    def _cleanup_play_tmp(self):
+        """Borra archivos temporales de reproducción que quedaron de sesiones
+        anteriores (por crash o cierre forzado)."""
+        try:
+            tmp = os.path.join(self._default_download_path(), '.reproducir')
+            if os.path.isdir(tmp):
+                for name in os.listdir(tmp):
+                    try:
+                        os.remove(os.path.join(tmp, name))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    def _status_bar_dp(self):
+        """Altura de la barra de estado en dp para no superponer los controles."""
+        try:
+            if IS_ANDROID:
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                res = PythonActivity.mActivity.getResources()
+                ident = res.getIdentifier('status_bar_height', 'dimen', 'android')
+                px = res.getDimensionPixelSize(ident)
+                dpi = Window.dpi or 160
+                return int(px * 160 / max(dpi, 1)) + 4
+        except Exception:
+            pass
+        return 0
 
     def _data_dir(self):
         try:
@@ -856,17 +983,29 @@ class M(ScreenManager):
 
     def _search_thread(self, query):
         import yt_dlp
+        key = ' '.join((query or '').strip().lower().split())
         try:
-            ydl_opts = {'quiet': True, 'no_warnings': True, 'noplaylist': True,
-                        'check_formats': False, 'nocheckcertificate': True,
-                        'socket_timeout': 15}
+            cached = self._search_cache.get(key)
+            if cached and (time.time() - cached.get('time', 0) < 300):
+                items = cached['items']
+                Clock.schedule_once(lambda dt, it=items: self.get_screen('search').show_results(it))
+                return
+            # extract_flat evita resolver formatos por cada resultado.
+            ydl_opts = {
+                'quiet': True, 'no_warnings': True, 'noplaylist': True,
+                'extract_flat': True, 'playlistend': 8,
+                'check_formats': False, 'nocheckcertificate': True,
+                'socket_timeout': 10,
+                'extractor_args': {'youtube': {'player_client': ['tv', 'android']}},
+            }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                results = ydl.extract_info('ytsearch10:' + query, download=False)
+                results = ydl.extract_info('ytsearch8:' + query, download=False)
             items = []
             for idx, e in enumerate((results.get('entries') or [])):
                 if not e or not e.get('id'):
                     continue
                 items.append(self._to_video(e, idx))
+            self._search_cache[key] = {'time': time.time(), 'items': items}
             Clock.schedule_once(lambda dt, it=items: self.get_screen('search').show_results(it))
         except Exception as e:
             err = str(e)[:150]
@@ -897,13 +1036,29 @@ class M(ScreenManager):
             crashlog.write_log("Error trending: " + err)
             Clock.schedule_once(lambda dt, m=err: self.get_screen('home').show_trending_error(m))
 
+    def _fast_thumb(self, url):
+        """Usa miniaturas pequeñas (mqdefault) en vez de las originales para
+        que carguen mucho más rápido en la lista."""
+        try:
+            if url and 'i.ytimg.com/vi/' in url:
+                vid = url.split('/vi/')[1].split('/')[0]
+                return 'https://i.ytimg.com/vi/' + vid + '/mqdefault.jpg'
+        except Exception:
+            pass
+        return url
+
     def _to_video(self, e, idx):
         dur = e.get('duration') or 0
         dur_txt = f"{int(dur // 60)}:{int(dur % 60):02d}" if dur else ''
+        vid = e.get('id') or ''
+        page_url = e.get('webpage_url') or e.get('original_url') or e.get('url') or ''
+        if vid and (not page_url or not str(page_url).startswith(('http://', 'https://'))):
+            page_url = 'https://www.youtube.com/watch?v=' + str(vid)
         return {
+            'id': vid,
             'title': e.get('title', 'Sin titulo'),
-            'url': e.get('webpage_url') or e.get('url'),
-            'thumb': e.get('thumbnail') or '',
+            'url': page_url,
+            'thumb': self._fast_thumb(e.get('thumbnail') or ''),
             'duration': dur_txt,
             'channel': e.get('uploader', ''),
             'views': self._fmt_views(e.get('view_count')),
@@ -930,9 +1085,507 @@ class M(ScreenManager):
             options.set_quality('1080p')
             self.go('options')
         except Exception as exc:
-            import traceback
             crashlog.write_crash('Error abriendo opciones:\n' + traceback.format_exc())
             self._info('No se pudo abrir', str(exc)[:180])
+
+    # ─── COLA ──────────────────────────────────────────────────
+    def add_to_queue(self, video, notify=True):
+        video = dict(video or {})
+        url = video.get('url') or ''
+        if not url:
+            self._info('Cola', 'Este video no tiene enlace.')
+            return
+        if any((x.get('url') == url) for x in self.play_queue):
+            if notify:
+                self._info('Cola', 'El video ya esta en la cola.')
+            return
+        self.play_queue.append(video)
+        crashlog.write_log('Cola: añadido ' + safe_text(video.get('title'), '')[:100])
+        if notify:
+            self._info('Añadido a la cola', f"{len(self.play_queue)} video(s) en espera.")
+
+    def _remove_from_queue(self, video):
+        url = (video or {}).get('url')
+        if not url:
+            return
+        self.play_queue = [x for x in self.play_queue if x.get('url') != url]
+
+    def _queue_next(self):
+        if not self.play_queue:
+            return None
+        return self.play_queue.pop(0)
+
+    def open_queue(self):
+        if self._queue_dialog is not None:
+            try:
+                self._queue_dialog.dismiss()
+            except Exception:
+                pass
+        d = ModalView(size_hint=(0.94, 0.84), background_color=(0,0,0,0.72), auto_dismiss=True)
+        root = BoxLayout(orientation='vertical', padding=dp(12), spacing=dp(8))
+        rr(root, NAV, 18, BORDER)
+        head = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        head.add_widget(Label(text=f'Cola de reproduccion  ·  {len(self.play_queue)}',
+                              color=WHITE, font_size=sp(15), bold=True, halign='left'))
+        close = B(text='Cerrar', size_hint_x=None, width=dp(72), font_size=sp(10))
+        rr(close, SUR2, 10, BORDER); close.bind(on_release=lambda *_: d.dismiss())
+        head.add_widget(close); root.add_widget(head)
+        scroll = ScrollView(do_scroll_x=False, bar_width=dp(2))
+        body = BoxLayout(orientation='vertical', spacing=dp(7), size_hint_y=None)
+        body.bind(minimum_height=body.setter('height'))
+        if not self.play_queue:
+            body.add_widget(Label(text='La cola esta vacia.\nUsa “Añadir a cola” desde un video.',
+                                  color=MUTED, halign='center', valign='middle', text_size=(dp(280),dp(80)),
+                                  size_hint_y=None, height=dp(90)))
+        else:
+            for idx, item in enumerate(self.play_queue):
+                row = BoxLayout(size_hint_y=None, height=dp(62), spacing=dp(6))
+                rr(row, SUR, 12, BORDER)
+                title = Label(text=f'{idx+1}. {safe_text(item.get("title"), "Video")}',
+                              color=WHITE, font_size=sp(9.5), halign='left', valign='middle',
+                              shorten=True, shorten_from='right', text_size=(None,None))
+                row.add_widget(title)
+                play = B(text='▶', size_hint_x=None, width=dp(42), font_size=sp(12))
+                rr(play, RED, 9)
+                rem = B(text='X', size_hint_x=None, width=dp(42), font_size=sp(11))
+                rr(rem, SUR2, 9, BORDER)
+                play.bind(on_release=lambda *_ , item=item: (self.play_queue.remove(item), d.dismiss(),
+                                                               self.play_stream(item, '720p')))
+                rem.bind(on_release=lambda *_ , item=item: (self.play_queue.remove(item), d.dismiss(), self.open_queue()))
+                row.add_widget(play); row.add_widget(rem); body.add_widget(row)
+        scroll.add_widget(body); root.add_widget(scroll)
+        d.add_widget(root); self._queue_dialog=d; d.open()
+
+    # ─── REPRODUCIR EN STREAMING ───────────────────────────────
+    def open_video_menu(self, video):
+        """Menu del resultado: reproducir, descargar o añadir a cola."""
+        def play():
+            d.dismiss(); self.open_play_quality(video)
+        def download():
+            d.dismiss(); self.open_options(video)
+        def queue():
+            d.dismiss(); self.add_to_queue(video)
+        d = ModalView(size_hint=(0.88, None), height=dp(274), background_color=(0,0,0,0.55))
+        box = Card(size_hint=(0.94,None), height=dp(262), pos_hint={'center_x':.5,'center_y':.5},
+                   orientation='vertical', spacing=dp(8), padding=dp(14))
+        box.add_widget(Label(text=safe_text(video.get('title',''),'Video'), color=WHITE, font_size=sp(12.5),
+                             bold=True, halign='center', valign='middle', size_hint_y=None, height=dp(42),
+                             shorten=True, shorten_from='right', text_size=(dp(230),dp(42))))
+        pb=B(text='REPRODUCIR',font_size=sp(13.5),bold=True,color=(0,0,0,1),size_hint_y=None,height=dp(48))
+        rr(pb,RED,12); pb.bind(on_release=lambda *_: play())
+        qb=B(text='AÑADIR A COLA',font_size=sp(12),color=WHITE,size_hint_y=None,height=dp(44))
+        rr(qb,SUR2,12,BORDER); qb.bind(on_release=lambda *_: queue())
+        db=B(text='DESCARGAR',font_size=sp(12),color=WHITE,size_hint_y=None,height=dp(44))
+        rr(db,SUR2,12,BORDER); db.bind(on_release=lambda *_: download())
+        box.add_widget(pb); box.add_widget(qb); box.add_widget(db); d.add_widget(box)
+        self._last_dialog=d; d.open()
+
+    def open_play_quality(self, video, player_callback=None):
+        """Selecciona calidad. No descarga: solo resuelve la URL directa del stream."""
+        def start(q):
+            d.dismiss()
+            if player_callback:
+                player_callback(q)
+            else:
+                self.play_stream(video, q)
+        d=ModalView(size_hint=(0.86,None),height=dp(320),background_color=(0,0,0,0.55))
+        box=Card(size_hint=(0.94,None),height=dp(308),pos_hint={'center_x':.5,'center_y':.5},
+                 orientation='vertical',spacing=dp(8),padding=dp(14))
+        box.add_widget(Label(text='Calidad de reproduccion',color=WHITE,font_size=sp(14),bold=True,
+                             halign='center',size_hint_y=None,height=dp(36)))
+        for q,desc in [('1080p','Full HD'),('720p','HD'),('480p','SD'),('360p','Baja')]:
+            b=B(text=f'{q}  ·  {desc}',font_size=sp(12),color=WHITE,size_hint_y=None,height=dp(50))
+            rr(b,SUR,12,BORDER); b.bind(on_release=lambda *_ ,qq=q:start(qq)); box.add_widget(b)
+        d.add_widget(box); self._last_dialog=d; d.open()
+
+    def _resolve_stream(self, url, quality):
+        """Obtiene un formato progresivo (video+audio) y devuelve su URL directa."""
+        import yt_dlp
+        res = int(str(quality or '720p').replace('p','') or 720)
+        cache_key = (url, res)
+        cached = self._stream_cache.get(cache_key)
+        if cached and cached.get('url'):
+            return cached
+        opts = {
+            'quiet': True, 'no_warnings': True, 'noplaylist': True,
+            'nocheckcertificate': True, 'socket_timeout': 15,
+            'extractor_args': {'youtube': {'player_client': ['tv','android']}},
+            # Solo un formato que ya tenga video+audio: ffpyplayer no hace merge.
+            'format': f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]',
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        stream_url = info.get('url') or ''
+        if not stream_url:
+            raise Exception('YouTube no devolvio un stream progresivo reproducible.')
+        result = {
+            'url': stream_url,
+            'quality': f"{info.get('height') or res}p",
+            'duration': info.get('duration') or 0,
+            'title': info.get('title') or '',
+        }
+        self._stream_cache[cache_key] = result
+        return result
+
+    def play_stream(self, video, quality='720p'):
+        """Streaming real: resuelve la URL temporal y la entrega a ffpyplayer."""
+        self._stream_quality_q = quality
+        self._remove_from_queue(video)
+        url=(video or {}).get('url') or ''
+        if not url:
+            self._info('Reproducir','Este video no tiene enlace disponible.'); return
+        dlg=ModalView(size_hint=(0.9,None),height=dp(150),background_color=(0,0,0,0.65),auto_dismiss=False)
+        box=Card(size_hint=(0.94,None),height=dp(138),pos_hint={'center_x':.5,'center_y':.5},
+                 orientation='vertical',spacing=dp(8),padding=dp(14))
+        lb=Label(text='Conectando con el stream...',color=WHITE,font_size=sp(12),halign='center',
+                 valign='middle',text_size=(None,None))
+        box.add_widget(lb); dlg.add_widget(box); self._last_dialog=dlg; dlg.open()
+        def worker():
+            try:
+                stream=self._resolve_stream(url,quality)
+                item=dict(video); item['stream_url']=stream['url']; item['stream_quality']=stream['quality']
+                Clock.schedule_once(lambda dt: (self._dismiss_dialog(dlg),self._play_internal(stream['url'],item)))
+            except Exception as e:
+                err=str(e)[:180]; crashlog.write_log('Error streaming: '+err)
+                Clock.schedule_once(lambda dt: (self._dismiss_dialog(dlg),
+                    self._fallback_play_download(url, video, quality)))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _fallback_play_download(self, url, video, quality):
+        """Fallback de emergencia: solo se usa si el stream directo no puede abrirse."""
+        import yt_dlp
+        dlg=ModalView(size_hint=(0.9,None),height=dp(150),background_color=(0,0,0,0.65),auto_dismiss=False)
+        box=Card(size_hint=(0.94,None),height=dp(138),pos_hint={'center_x':.5,'center_y':.5},
+                 orientation='vertical',spacing=dp(8),padding=dp(14))
+        lb=Label(text='Streaming no disponible. Preparando fallback local...',color=WHITE,font_size=sp(11),
+                 halign='center',valign='middle',text_size=(None,None))
+        bar=ProgressBar(max=100,value=0,size_hint_y=None,height=dp(10))
+        box.add_widget(lb); box.add_widget(bar); dlg.add_widget(box); dlg.open()
+        out_dir=os.path.join(self._default_download_path(),'.reproducir')
+        os.makedirs(out_dir,exist_ok=True)
+        def hook(d):
+            try:
+                if d.get('status')=='downloading':
+                    total=d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+                    done=d.get('downloaded_bytes') or 0
+                    p=int(done*100/total) if total else 0
+                    Clock.schedule_once(lambda dt,p=p:setattr(bar,'value',p))
+            except Exception: pass
+        def worker():
+            try:
+                opts={'outtmpl':os.path.join(out_dir,'%(title).80s.%(ext)s'),
+                      'progress_hooks':[hook],'quiet':True,'no_warnings':True,
+                      'nocheckcertificate':True,'socket_timeout':20,
+                      'extractor_args':{'youtube':{'player_client':['tv','android']}},
+                      'format':f'best[height<={int(str(quality).replace("p","") or 720)}]/best',
+                      'merge_output_format':'mp4'}
+                ff=self._ensure_ffmpeg()
+                if ff: opts['ffmpeg_location']=ff
+                with yt_dlp.YoutubeDL(opts) as ydl: ydl.download([url])
+                found=None
+                for name in os.listdir(out_dir):
+                    if name.lower().endswith(('.mp4','.mkv','.webm')):
+                        pth=os.path.join(out_dir,name)
+                        if os.path.isfile(pth) and os.path.getsize(pth)>20000:
+                            found=pth; break
+                if not found: raise Exception('No se genero el archivo temporal.')
+                item=dict(video); item['title']=item.get('title') or os.path.basename(found)
+                Clock.schedule_once(lambda dt:(self._dismiss_dialog(dlg),setattr(self,'_play_temp',found),
+                                               self._play_internal(found,item)))
+            except Exception as e:
+                err=str(e)[:180]; crashlog.write_log('Fallback reproduccion fallo: '+err)
+                Clock.schedule_once(lambda dt:(self._dismiss_dialog(dlg),
+                                               self._info('Reproduccion','No se pudo reproducir el video.\n'+err)))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _stream_switch(self, v, item, quality, busy_label=None):
+        url=(item or {}).get('url') or ''
+        if not url: return
+        if busy_label: busy_label.text='Cambiando calidad...'
+        def worker():
+            try:
+                stream=self._resolve_stream(url,quality)
+                Clock.schedule_once(lambda dt: self._apply_stream(v,item,stream,busy_label))
+            except Exception as e:
+                err=str(e)[:160]
+                Clock.schedule_once(lambda dt: self._info('Calidad', 'No se pudo cambiar la calidad.\n'+err))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _apply_stream(self, v, item, stream, busy_label=None):
+        try:
+            pos=v.position or 0
+            v.state='stop'; v.source=''
+            v.source=stream['url']; v.state='play'
+            if pos:
+                Clock.schedule_once(lambda dt,p=pos: setattr(v,'position',p),0.25)
+            item['stream_url']=stream['url']; item['stream_quality']=stream['quality']
+            if busy_label: busy_label.text=stream['quality']
+        except Exception as e:
+            crashlog.write_log('Error aplicando calidad: '+str(e)[:140])
+
+    def _open_speed(self, v):
+        d=ModalView(size_hint=(0.72,None),height=dp(270),background_color=(0,0,0,0.65))
+        box=Card(size_hint=(0.92,None),height=dp(250),pos_hint={'center_x':.5,'center_y':.5},
+                 orientation='vertical',spacing=dp(7),padding=dp(12))
+        box.add_widget(Label(text='Velocidad',color=WHITE,font_size=sp(14),bold=True,size_hint_y=None,height=dp(30)))
+        for rate in (0.5,0.75,1.0,1.25,1.5,2.0):
+            b=B(text=f'{rate:g}x',font_size=sp(12),color=WHITE,size_hint_y=None,height=dp(32))
+            rr(b,SUR,9,BORDER)
+            b.bind(on_release=lambda *_ ,r=rate:(d.dismiss(),self._set_playback_rate(v,r)))
+            box.add_widget(b)
+        d.add_widget(box); d.open()
+
+    def _set_playback_rate(self, v, rate):
+        ok=False
+        for obj in (getattr(v,'_video',None), getattr(v,'_player',None)):
+            if obj is None: continue
+            for name in ('set_playback_rate','set_rate','set_speed'):
+                try:
+                    fn=getattr(obj,name,None)
+                    if fn: fn(rate); ok=True; break
+                except Exception: pass
+            if ok: break
+        if not ok:
+            self._info('Velocidad', 'Esta version de ffpyplayer no expone control de velocidad.')
+        else:
+            crashlog.write_log(f'Velocidad de reproduccion: {rate}x')
+
+    def _play_next_queue(self):
+        nxt=self._queue_next()
+        if nxt:
+            self.play_stream(nxt,'720p')
+            return True
+        return False
+
+    def _play_internal(self, source, item=None):
+        """Reproductor interno tipo YouTube para archivos locales o streams HTTPS."""
+        global Video
+        self._player_fallback=False
+        if Video is None:
+            try:
+                from kivy.uix.video import Video as _Video
+                Video=_Video
+            except Exception:
+                crashlog.write_log('Reproductor: no se pudo importar Video: '+str(sys.exc_info()[1])[:200])
+                self._info('Reproductor','El reproductor de video no esta disponible.')
+                return
+        try:
+            title=safe_text((item or {}).get('title',''),os.path.basename(source))
+            state={'mode':'video','fs':False,'drag':False,'failed':False,'hidden':False,
+                   'sound':None,'ended':False,'rate':1.0}
+            d=ModalView(size_hint=(1,1),background_color=(0,0,0,1),auto_dismiss=False)
+            root=FloatLayout()
+            v=Video(source=source,state='play',volume=1,allow_stretch=True,keep_ratio=True,
+                    size_hint=(1,1),pos_hint={'x':0,'y':0})
+            root.add_widget(v)
+
+            # Capa de toque: no roba los eventos de los controles porque queda debajo.
+            touch_layer=B(text='',size_hint=(1,1),pos_hint={'x':0,'y':0})
+            touch_layer.background_color=(0,0,0,0)
+            root.add_widget(touch_layer)
+
+            top=BoxLayout(size_hint=(1,None),height=dp(52),pos_hint={'top':1},spacing=dp(4),
+                          padding=(dp(8),dp(6)))
+            rr(top,(0,0,0,0.58),0)
+            tl=Label(text=title,color=WHITE,font_size=sp(12),bold=True,halign='left',valign='middle',
+                     shorten=True,shorten_from='right',text_size=(None,None))
+            top.add_widget(tl)
+            qlabel=B(text='HD',size_hint_x=None,width=dp(42),font_size=sp(9))
+            rr(qlabel,SUR2,9,BORDER); draw_icon(qlabel,'quality')
+            speed=B(text='',size_hint_x=None,width=dp(42)); rr(speed,SUR2,9,BORDER); draw_icon(speed,'speed')
+            fsb=B(text='',size_hint_x=None,width=dp(42)); rr(fsb,SUR2,9,BORDER); draw_icon(fsb,'fs')
+            cb=B(text='',size_hint_x=None,width=dp(42)); rr(cb,RED,9); draw_icon(cb,'close')
+            top.add_widget(qlabel); top.add_widget(speed); top.add_widget(fsb); top.add_widget(cb)
+            root.add_widget(top)
+
+            bottom=BoxLayout(size_hint=(1,None),height=dp(68),pos_hint={'x':0,'y':0},spacing=dp(5),
+                             padding=(dp(8),dp(5)))
+            rr(bottom,(0,0,0,0.62),0)
+            pb=B(text='',size_hint_x=None,width=dp(44)); rr(pb,SUR2,9,BORDER); draw_icon(pb,'pause')
+            prev=B(text='',size_hint_x=None,width=dp(38)); rr(prev,SUR2,9,BORDER); draw_icon(prev,'prev')
+            nxt=B(text='',size_hint_x=None,width=dp(38)); rr(nxt,SUR2,9,BORDER); draw_icon(nxt,'next')
+            sl=Slider(min=0,max=1,value=0,size_hint_x=1)
+            tml=Label(text='0:00 / 0:00',color=WHITE,font_size=sp(8.5),size_hint_x=None,width=dp(86))
+            ab=B(text='',size_hint_x=None,width=dp(38)); rr(ab,SUR2,9,BORDER); draw_icon(ab,'music')
+            qb=B(text='',size_hint_x=None,width=dp(38)); rr(qb,SUR2,9,BORDER); draw_icon(qb,'queue')
+            bottom.add_widget(pb); bottom.add_widget(prev); bottom.add_widget(nxt); bottom.add_widget(sl)
+            bottom.add_widget(tml); bottom.add_widget(ab); bottom.add_widget(qb)
+            root.add_widget(bottom)
+
+            # Barra fina superior tipo YouTube.
+            thin=ProgressBar(max=1,value=0,size_hint=(1,None),height=dp(3),pos_hint={'x':0,'top':1})
+            root.add_widget(thin)
+
+            d.add_widget(root); self._last_dialog=d; self._player_dialog=d; d.open()
+            crashlog.write_log('Reproductor interno abierto: '+safe_text((item or {}).get('title'),os.path.basename(source)))
+            t0=[time.time()]
+            hide_ev=[None]
+
+            def show_controls(*_):
+                state['hidden']=False; top.opacity=1; bottom.opacity=1; thin.opacity=1
+                if hide_ev[0]: 
+                    try: hide_ev[0].cancel()
+                    except Exception: pass
+                hide_ev[0]=Clock.schedule_once(lambda dt: hide_controls(),3.0)
+
+            def hide_controls(*_):
+                if state['mode']=='video' and v.state=='play':
+                    state['hidden']=True; top.opacity=0; bottom.opacity=0; thin.opacity=0
+
+            def tap(*_):
+                if state['hidden']: show_controls()
+                else: show_controls()
+            touch_layer.bind(on_release=tap)
+            show_controls()
+
+            def _set_mode(mode):
+                if mode=='audio':
+                    v.state='stop'
+                    if state['sound'] is None:
+                        try:
+                            from kivy.core.audio import SoundLoader
+                            state['sound']=SoundLoader.load(source)
+                            if state['sound'] is None: raise Exception('No se pudo cargar audio')
+                            state['sound'].volume=1; state['sound'].play()
+                        except Exception as e:
+                            self._info('Audio','No se pudo activar el modo audio.'); crashlog.write_log('Audio fallo: '+str(e)[:120])
+                    v.opacity=0; state['mode']='audio'
+                    ab.canvas.after.clear(); draw_icon(ab,'play')
+                else:
+                    if state['sound'] is not None:
+                        try: state['sound'].stop(); state['sound'].unload()
+                        except Exception: pass
+                        state['sound']=None
+                    v.opacity=1; state['mode']='video'; v.state='play'; draw_icon(ab,'music')
+                show_controls()
+            ab.bind(on_release=lambda *_:_set_mode('audio' if state['mode']!='audio' else 'video'))
+
+            def toggle_play(*_):
+                if state['mode']=='audio' and state['sound'] is not None:
+                    if getattr(state['sound'],'state','')=='playing':
+                        state['sound'].stop(); draw_icon(pb,'play')
+                    else:
+                        state['sound'].play(); draw_icon(pb,'pause')
+                else:
+                    if v.state=='play': v.state='pause'; draw_icon(pb,'play')
+                    else: v.state='play'; draw_icon(pb,'pause')
+                show_controls()
+            pb.bind(on_release=toggle_play)
+
+            def go_next(*_):
+                if not self._play_next_queue():
+                    self._info('Cola','No hay mas videos en la cola.')
+                else:
+                    d.dismiss()
+            nxt.bind(on_release=go_next)
+
+            prev.bind(on_release=lambda *_: self._info('Reproductor','El retroceso de video se controla con la barra de progreso.'))
+
+            def seek_start(*_): state['drag']=True; show_controls()
+            def seek_end(*_):
+                state['drag']=False
+                try:
+                    if v.duration: v.position=sl.value
+                except Exception: pass
+                show_controls()
+            sl.bind(on_touch_down=seek_start,on_touch_up=seek_end)
+
+            qlabel.bind(on_release=lambda *_: self.open_play_quality(item or {}, lambda q:self._stream_switch(v,item,q,qlabel)))
+            speed.bind(on_release=lambda *_: self._open_speed(v))
+
+            def toggle_fs(*_):
+                state['fs']=not state['fs']
+                try:
+                    from jnius import autoclass
+                    PythonActivity=autoclass('org.kivy.android.PythonActivity')
+                    decor=PythonActivity.mActivity.getWindow().getDecorView()
+                    flags=decor.getSystemUiVisibility()
+                    if state['fs']: flags |= 0x1|0x2|0x4|0x200|0x1000
+                    else: flags &= ~(0x1|0x2|0x4|0x200|0x1000)
+                    decor.setSystemUiVisibility(flags)
+                except Exception as e: crashlog.write_log('Fullscreen fallo: '+str(e)[:120])
+                show_controls()
+            fsb.bind(on_release=toggle_fs)
+            cb.bind(on_release=lambda *_: d.dismiss())
+            qb.bind(on_release=lambda *_: self.open_queue())
+
+            def _on_dismiss(*_):
+                try: v.state='stop'; v.source=''
+                except Exception: pass
+                if state['sound'] is not None:
+                    try: state['sound'].stop(); state['sound'].unload()
+                    except Exception: pass
+                    state['sound']=None
+                if getattr(self, '_play_temp', None) == source:
+                    try:
+                        os.remove(source)
+                        crashlog.write_log('Reproductor: temporal borrado ' + os.path.basename(source))
+                    except Exception:
+                        pass
+                    self._play_temp = None
+                if state['fs']:
+                    try:
+                        from jnius import autoclass
+                        PythonActivity=autoclass('org.kivy.android.PythonActivity')
+                        PythonActivity.mActivity.getWindow().getDecorView().setSystemUiVisibility(0)
+                    except Exception: pass
+                for ev in hide_ev:
+                    if ev:
+                        try: ev.cancel()
+                        except Exception: pass
+                try: tick_ev.cancel()
+                except Exception: pass
+                self._player_dialog=None
+
+            d.bind(on_dismiss=_on_dismiss)
+
+            def _tick(_dt):
+                try:
+                    dur=v.duration or 0; pos=v.position or 0
+                    if not state['drag'] and dur:
+                        sl.max=dur; sl.value=pos
+                    if dur:
+                        fm=lambda x:f"{int(x//60)}:{int(x%60):02d}"
+                        tml.text=f"{fm(pos)} / {fm(dur)}"; thin.value=min(1,max(0,pos/dur))
+                    qlabel.text=safe_text(item.get('stream_quality','HD') if item else 'HD','HD')
+                    if state['mode']=='video' and v.state=='play' and (time.time()-t0[0])>8 and v.texture is None and not state['failed']:
+                        state['failed']=True
+                        crashlog.write_log('Streaming: sin textura en 8s -> fallback local')
+                        url=(item or {}).get('url') or ''
+                        d.dismiss()
+                        if url and str(source).startswith(('http://','https://')):
+                            Clock.schedule_once(lambda dt: self._fallback_play_download(url, item, getattr(self,'_stream_quality_q','720p')), 0.1)
+                        else:
+                            Clock.schedule_once(lambda dt: self._info('Reproductor','El reproductor no pudo renderizar el video.'), 0.1)
+                    if state['mode']=='video' and v.state=='play' and not state['hidden'] and (time.time()-t0[0])>3:
+                        hide_controls()
+                    if dur and pos >= dur-0.7 and not state['ended']:
+                        state['ended']=True
+                        if self.play_queue:
+                            d.dismiss(); Clock.schedule_once(lambda dt:self._play_next_queue(),0.15)
+                except Exception: pass
+            tick_ev=Clock.schedule_interval(_tick,0.25)
+        except Exception as e:
+            crashlog.write_log('Reproductor: error: '+str(e)[:180]+'\n'+traceback.format_exc())
+            self._info('Reproductor','No se pudo abrir el reproductor interno.')
+            if (item or {}).get('public_uri'): self.play_download(item)
+
+    def _play_progress(self, lb, bar, p, st):
+        try:
+            bar.value = p
+            if p < 100:
+                lb.text = ('Descargando para reproducir... ' + st) if st else 'Descargando para reproducir...'
+            else:
+                lb.text = 'Procesando...'
+        except Exception:
+            pass
+
+    def _dismiss_dialog(self, dlg):
+        try:
+            dlg.dismiss()
+        except Exception:
+            pass
+
 
 
     def paste_link(self, field):
@@ -1122,8 +1775,8 @@ class M(ScreenManager):
             self._dir_before = set(os.listdir(self.download_path))
         except Exception:
             self._dir_before = set()
-        self._ensure_ffmpeg()
-        ffmpeg_dir = self._find_ffmpeg_dir()
+        ffmpeg_bin = self._ensure_ffmpeg()
+        crashlog.write_log('ffmpeg_bin para yt-dlp: ' + repr(ffmpeg_bin))
         ydl_opts = {
             'outtmpl': os.path.join(self.download_path, '%(title)s.%(ext)s'),
             'progress_hooks': [self._hook],
@@ -1137,9 +1790,13 @@ class M(ScreenManager):
             'concurrent_fragment_downloads': 2,
             'windowsfilenames': True,
             'logger': _YDL_Logger(),
+            # YouTube bloquea con 403 los URLs del cliente web (y sin JS runtime
+            # el nsig queda incompleto). tv/android devuelven formatos que se
+            # descargan sin JS y a 1080p.
+            'extractor_args': {'youtube': {'player_client': ['tv', 'android']}},
         }
-        if ffmpeg_dir:
-            ydl_opts['ffmpeg_location'] = ffmpeg_dir
+        if ffmpeg_bin:
+            ydl_opts['ffmpeg_location'] = ffmpeg_bin
         if self.current_mode == 'video':
             res = self.current_quality.replace('p', '')
             ydl_opts['format'] = f'bestvideo[height<={res}]+bestaudio/best[height<={res}]/best'
@@ -1198,36 +1855,39 @@ class M(ScreenManager):
         self.go('downloads')
 
     def _ensure_ffmpeg(self):
-        """Copia libffmpegbin.so (ffmpeg empaquetado por p4a) a
-        files/app/bin/ffmpeg para que _find_ffmpeg_dir y yt-dlp lo
-        encuentren y pueda hacer el merge de video+audio."""
+        """Devuelve la ruta al binario ffmpeg empaquetado (libffmpegbin.so)
+        dentro del dir nativo del APK y ajusta LD_LIBRARY_PATH para que el
+        linker encuentre las libav*.so al ejecutarlo.
+        IMPORTANTE: hay que ejecutarlo DESDE nativeLibraryDir (etiqueta
+        SELinux apk_data_file, ejecutable por la app). Copiarlo a files/bin
+        (app_data_file) da EACCES: SELinux deniega execute_no_trans."""
         try:
             if not IS_ANDROID:
-                return
+                return None
             from jnius import autoclass
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             app_info = PythonActivity.mActivity.getApplicationInfo()
-            src = os.path.join(app_info.nativeLibraryDir, 'libffmpegbin.so')
-            if not os.path.exists(src):
-                crashlog.write_log('ffmpeg: libffmpegbin.so no existe en ' + app_info.nativeLibraryDir)
-                return
-            base = os.environ.get('ANDROID_PRIVATE', '')
-            if not base:
-                base = os.path.dirname(os.path.abspath(__file__))
-            bin_dir = os.path.join(base, 'bin')
-            os.makedirs(bin_dir, exist_ok=True)
-            dst = os.path.join(bin_dir, 'ffmpeg')
-            if not os.path.exists(dst):
-                shutil.copy2(src, dst)
-                os.chmod(dst, 0o755)
-                crashlog.write_log('ffmpeg listo en ' + dst)
+            native = app_info.nativeLibraryDir
+            ffmpeg_bin = os.path.join(native, 'libffmpegbin.so')
+            if not os.path.exists(ffmpeg_bin):
+                crashlog.write_log('ffmpeg: libffmpegbin.so no existe en ' + native)
+                return None
             # El binario ffmpeg enlaza contra las libav*.so compartidas; sin
             # LD_LIBRARY_PATH el linker no las encuentra al ejecutarlo
             # ("CANNOT LINK EXECUTABLE: library libavdevice.so not found").
-            os.environ['LD_LIBRARY_PATH'] = app_info.nativeLibraryDir
-            crashlog.write_log('LD_LIBRARY_PATH=' + app_info.nativeLibraryDir)
+            os.environ['LD_LIBRARY_PATH'] = native
+            os.environ['PATH'] = native + os.pathsep + os.environ.get('PATH', '')
+            crashlog.write_log('ffmpeg bin=' + ffmpeg_bin)
+            import subprocess
+            try:
+                p = subprocess.run([ffmpeg_bin, '-version'], capture_output=True, timeout=15)
+                crashlog.write_log('ffmpeg test rc=%s out=%r err=%r' % (p.returncode, p.stdout[:60], p.stderr[:160]))
+            except Exception as e:
+                crashlog.write_log('ffmpeg test fallo: ' + str(e)[:160])
+            return ffmpeg_bin
         except Exception as e:
             crashlog.write_log('ffmpeg setup fallo: ' + str(e)[:150])
+            return None
 
     def _find_ffmpeg_dir(self):
         candidates = [os.environ.get('ANDROID_PRIVATE', ''),
@@ -1265,6 +1925,7 @@ class M(ScreenManager):
         self.paused = False
         public = getattr(self, '_published', []) or []
         self._published = []
+        entry = None
         if self.selected:
             entry = dict(self.selected)
             entry['quality'] = self.current_quality
@@ -1277,11 +1938,39 @@ class M(ScreenManager):
             self.downloads.insert(0, entry)
             self._save_history()
         self.get_screen('downloading').update_progress(100, '0', '0', '0.0 MB/s')
-        if public:
-            self._info('Descarga completada!', 'Archivo guardado en:\n' + public[0]['path'])
-        else:
-            self._info('Descarga completada!', 'Archivo guardado en:\n' + self.download_path)
+        path = public[0]['path'] if public else self.download_path
+        self._show_completed(entry, path)
         Clock.schedule_once(lambda dt: self.go('downloads'), 0.3)
+
+    def _show_completed(self, entry, path):
+        """Diálogo de descarga completada con acciones: reproducir y abrir carpeta."""
+        d = ModalView(size_hint=(0.94, None), height=dp(270), background_color=(0, 0, 0, 0))
+        box = Card(size_hint=(0.94, None), height=dp(258), pos_hint={'center_x': .5, 'center_y': .5},
+                   orientation='vertical', spacing=dp(8), padding=dp(14))
+        box.add_widget(Label(text='Descarga completada!', color=GREEN, font_size=sp(16), bold=True,
+                             halign='center', size_hint_y=None, height=dp(34)))
+        box.add_widget(Label(text=safe_text(path, ''), color=MUTED, font_size=sp(9.5),
+                             halign='center', valign='middle', size_hint_y=1, text_size=(None, None)))
+        row = BoxLayout(size_hint_y=None, height=dp(52), spacing=dp(8))
+        buttons = []
+        if entry is not None:
+            play = B(text='▶ Reproducir', font_size=sp(11.5))
+            rr(play, RED, 12, BORDER)
+            play.bind(on_release=lambda *_: (d.dismiss(), self.play_download(entry)))
+            buttons.append(play)
+        folder = B(text='Abrir carpeta', font_size=sp(11.5), color=WHITE)
+        rr(folder, SUR2, 12, BORDER)
+        folder.bind(on_release=lambda *_: (d.dismiss(), self.open_folder()))
+        done = B(text='Listo', font_size=sp(11.5), color=WHITE)
+        rr(done, SUR2, 12, BORDER)
+        done.bind(on_release=lambda *_: d.dismiss())
+        buttons.append(folder); buttons.append(done)
+        for b in buttons:
+            row.add_widget(b)
+        box.add_widget(row)
+        d.add_widget(box)
+        self._last_dialog = d
+        d.open()
 
     def _publish_new_files(self):
         """Mueve los archivos terminados a la carpeta pública Descargas y
@@ -1444,78 +2133,202 @@ class M(ScreenManager):
             self._info('No se pudo reproducir', str(e)[:180])
 
     def _play_internal(self, path, item=None):
-        """Reproduce un archivo local dentro de la app usando el widget Video.
-        Si el reproductor interno no puede decodificar/rendear el archivo,
-        cae al reproductor del sistema."""
+        """Reproduce un archivo local dentro de la app con pantalla completa,
+        tiempo, barra de progreso y modo audio en segundo plano."""
         global Video
+        self._player_fallback = False
         if Video is None:
             try:
                 from kivy.uix.video import Video as _Video
                 Video = _Video
             except Exception:
                 crashlog.write_log('Reproductor: no se pudo importar kivy.uix.video: ' + str(sys.exc_info()[1])[:200])
-                self._info('Reproductor',
-                           'El reproductor de video no esta disponible en esta version.')
+                self._info('Reproductor', 'El reproductor de video no esta disponible en esta version.')
                 return
         try:
-            from kivy.core.video import Video as CoreVideo
-            crashlog.write_log('Reproductor: provider video = ' + getattr(CoreVideo, '__name__', str(CoreVideo)))
-        except Exception as e:
-            crashlog.write_log('Reproductor: sin provider de video: ' + str(e)[:200])
-        try:
             title = safe_text((item or {}).get('title', ''), os.path.basename(path))
-            v = Video(source=path, state='play', sound=True, volume=1)
-            box = Card(size_hint=(0.94, None), height=dp(300), pos_hint={'center_x': .5, 'center_y': .5},
-                       orientation='vertical', spacing=dp(8), padding=dp(10))
-            box.add_widget(Label(text=title, color=WHITE, font_size=sp(11.5), bold=True,
-                                 halign='center', valign='middle',
-                                 size_hint_y=None, height=dp(34), shorten=True, shorten_from='right'))
-            vbox = BoxLayout(size_hint_y=1)
-            vbox.add_widget(v)
-            box.add_widget(vbox)
-            controls = BoxLayout(size_hint_y=None, height=dp(52), spacing=dp(10))
-            pause = B(text='⏸ Pausar', font_size=sp(11))
-            rr(pause, SUR2, 12, BORDER)
-            def _toggle(*_):
-                if v.state == 'play':
-                    v.state = 'pause'; pause.text = '▶ Reanudar'
-                else:
-                    v.state = 'play'; pause.text = '⏸ Pausar'
-            pause.bind(on_release=_toggle)
-            close = B(text='Cerrar', color=WHITE, font_size=sp(11))
-            rr(close, RED, 12)
-            controls.add_widget(pause); controls.add_widget(close)
-            box.add_widget(controls)
-            d = ModalView(size_hint=(0.98, 0.7), background_color=(0, 0, 0, 0.7))
-            failed = {'yes': False}
-            def _fallback(_dt=None):
-                if failed['yes']:
-                    return
-                try:
-                    if v.texture is None:
-                        failed['yes'] = True
-                        crashlog.write_log('Reproductor: sin textura en 4s -> reproductor del sistema')
+            state = {'mode': 'video', 'fs': False, 'drag': False, 'failed': False, 'sound': None}
+            d = ModalView(size_hint=(1, 1), background_color=(0, 0, 0, 0), auto_dismiss=False)
+            root = BoxLayout(orientation='vertical', spacing=dp(2),
+                             padding=(dp(2), dp(self._status_bar_dp()), dp(2), dp(2)))
+            top = BoxLayout(size_hint_y=None, height=dp(52), spacing=dp(6), padding=(dp(4), dp(4)))
+            rr(top, (0, 0, 0, 0.55), 0)
+            tl = Label(text=title, color=WHITE, font_size=sp(12.5), bold=True,
+                       halign='left', valign='middle', size_hint_x=1, text_size=(None, None))
+            top.add_widget(tl)
+            fsb = B(text='', size_hint_x=None, width=dp(48)); rr(fsb, SUR2, 10, BORDER); draw_icon(fsb, 'fs')
+            ab = B(text='', size_hint_x=None, width=dp(48)); rr(ab, SUR2, 10, BORDER); draw_icon(ab, 'music')
+            cb = B(text='', size_hint_x=None, width=dp(48)); rr(cb, RED, 10); draw_icon(cb, 'close')
+            top.add_widget(fsb); top.add_widget(ab); top.add_widget(cb)
+            root.add_widget(top)
+            v = Video(source=path, state='play', volume=1)
+            varea = FloatLayout()
+            varea.add_widget(v)
+            root.add_widget(varea)
+            ascreen = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(24))
+            al = Label(text=title, color=WHITE, font_size=sp(15), bold=True,
+                       halign='center', valign='middle', text_size=(None, None))
+            ast = Label(text='Puedes bloquear la pantalla o salir y seguira sonando.', color=MUTED, font_size=sp(10),
+                        halign='center', valign='middle', text_size=(None, None))
+            ascreen.add_widget(Widget(size_hint_y=1))
+            ascreen.add_widget(al)
+            ascreen.add_widget(ast)
+            ascreen.add_widget(Widget(size_hint_y=1))
+            ascreen.size_hint_y = None
+            ascreen.height = 0
+            ascreen.opacity = 0
+            root.add_widget(ascreen)
+            ctrl = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(8), padding=(dp(8), dp(4)))
+            rr(ctrl, (0, 0, 0, 0.55), 0)
+            pb = B(text='⏸', font_size=sp(14), size_hint_x=None, width=dp(52)); rr(pb, SUR2, 10, BORDER)
+            sl = Slider(min=0, max=1, value=0, size_hint_x=1)
+            tml = Label(text='0:00 / 0:00', color=MUTED, font_size=sp(9), size_hint_x=None, width=dp(112))
+            ctrl.add_widget(pb); ctrl.add_widget(sl); ctrl.add_widget(tml)
+            root.add_widget(ctrl)
+            d.add_widget(root)
+            self._last_dialog = d
+            self._player_dialog = d
+            d.open()
+            crashlog.write_log('Reproductor interno abierto: ' + os.path.basename(path))
+            t0 = [time.time()]
+
+            def _set_mode(mode):
+                if mode == 'audio':
+                    v.state = 'stop'
+                    if state['sound'] is None:
                         try:
-                            v.state = 'stop'; v.source = ''
+                            from kivy.core.audio import SoundLoader
+                            s = SoundLoader.load(path)
+                            if s is None:
+                                raise Exception('No se pudo cargar el audio')
+                            state['sound'] = s
+                            s.volume = 1.0
+                            s.play()
+                        except Exception as e:
+                            crashlog.write_log('Modo audio fallo: ' + str(e)[:150])
+                            self._info('Audio', 'No se pudo activar el modo audio.\n' + str(e)[:120])
+                    else:
+                        try:
+                            if getattr(state['sound'], 'state', '') != 'playing':
+                                state['sound'].play()
                         except Exception:
                             pass
-                        d.dismiss()
-                        self._info('Reproductor', 'El reproductor interno no pudo renderizar el video.\nAbriendo el reproductor del sistema...')
-                        self.play_download(item)
+                    varea.opacity = 0
+                    ascreen.opacity = 1
+                    ascreen.size_hint_y = 1
+                    ascreen.height = 0
+                    state['mode'] = 'audio'
+                    pb.text = '⏸'
+                else:
+                    if state['sound'] is not None:
+                        try:
+                            state['sound'].stop(); state['sound'].unload()
+                        except Exception:
+                            pass
+                        state['sound'] = None
+                    varea.opacity = 1
+                    ascreen.opacity = 0
+                    ascreen.size_hint_y = None
+                    ascreen.height = 0
+                    state['mode'] = 'video'
+                    if v.state != 'play':
+                        v.state = 'play'
+                    pb.text = '⏸'
+            ab.bind(on_release=lambda *_: _set_mode('audio' if state['mode'] != 'audio' else 'video'))
+
+            def _toggle_play(*_):
+                if state['mode'] == 'audio':
+                    s = state['sound']
+                    if s is not None:
+                        if getattr(s, 'state', '') == 'playing':
+                            s.stop(); pb.text = '▶'
+                        else:
+                            s.play(); pb.text = '⏸'
+                else:
+                    if v.state == 'play':
+                        v.state = 'pause'; pb.text = '▶'
+                    else:
+                        v.state = 'play'; pb.text = '⏸'
+            pb.bind(on_release=_toggle_play)
+
+            def _toggle_fs(*_):
+                state['fs'] = not state['fs']
+                try:
+                    from jnius import autoclass
+                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                    decor = PythonActivity.mActivity.getWindow().getDecorView()
+                    flags = decor.getSystemUiVisibility()
+                    if state['fs']:
+                        flags = flags | 0x1 | 0x2 | 0x4 | 0x200 | 0x1000
+                    else:
+                        flags = flags & ~(0x1 | 0x2 | 0x4 | 0x200 | 0x1000)
+                    decor.setSystemUiVisibility(flags)
                 except Exception as e:
-                    crashlog.write_log('Reproductor: check textura fallo: ' + str(e)[:150])
-            Clock.schedule_once(_fallback, 4)
-            def _on_close(*_):
+                    crashlog.write_log('Fullscreen fallo: ' + str(e)[:120])
+            fsb.bind(on_release=_toggle_fs)
+
+            def _on_dismiss(*_):
                 try:
                     v.state = 'stop'; v.source = ''
                 except Exception:
                     pass
-                d.dismiss()
-            close.bind(on_release=_on_close)
-            d.bind(on_dismiss=lambda *_: setattr(v, 'state', 'stop'))
-            d.add_widget(box)
-            self._last_dialog = d
-            d.open()
+                if state['sound'] is not None:
+                    try:
+                        state['sound'].stop(); state['sound'].unload()
+                    except Exception:
+                        pass
+                    state['sound'] = None
+                if getattr(self, '_play_temp', None) == path:
+                    try:
+                        os.remove(path)
+                        crashlog.write_log('Reproductor: temporal borrado ' + os.path.basename(path))
+                    except Exception:
+                        pass
+                    self._play_temp = None
+                if state['fs']:
+                    try:
+                        from jnius import autoclass
+                        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                        PythonActivity.mActivity.getWindow().getDecorView().setSystemUiVisibility(0)
+                    except Exception:
+                        pass
+                try:
+                    tick_ev.cancel()
+                except Exception:
+                    pass
+                self._player_dialog = None
+            cb.bind(on_release=lambda *_: d.dismiss())
+            d.bind(on_dismiss=_on_dismiss)
+
+            def _tick(_dt):
+                try:
+                    dur = v.duration or 0
+                    pos = v.position or 0
+                    if not state['drag'] and dur:
+                        sl.max = dur
+                        sl.value = pos
+                    if dur:
+                        fm = lambda x: f"{int(x//60)}:{int(x%60):02d}"
+                        tml.text = f"{fm(pos)} / {fm(dur)}"
+                    if state['mode'] == 'video' and v.state == 'play' and (time.time() - t0[0]) > 8 and v.texture is None:
+                        state['failed'] = True
+                        self._player_fallback = True
+                        crashlog.write_log('Reproductor: sin textura en 8s -> reproductor del sistema')
+                        d.dismiss()
+                        self._info('Reproductor', 'El reproductor interno no pudo renderizar el video.\nAbriendo el reproductor del sistema...')
+                        self.play_download(item)
+                except Exception:
+                    pass
+            tick_ev = Clock.schedule_interval(_tick, 0.5)
+            def _drag_start(*_): state['drag'] = True
+            def _drag_end(*_):
+                state['drag'] = False
+                try:
+                    if v.duration:
+                        v.position = sl.value
+                except Exception:
+                    pass
+            sl.bind(on_touch_down=_drag_start, on_touch_up=_drag_end)
         except Exception as e:
             crashlog.write_log('Reproductor: error reproductor interno: ' + str(e)[:150] + '\n' + traceback.format_exc())
             self._info('Reproductor', 'No se pudo abrir el reproductor interno.')
@@ -1798,15 +2611,18 @@ class M(ScreenManager):
             ('Abrir / compartir enlace', share),
         ]).open()
 
+    def delete_download(self, item):
+        try:
+            if item in self.downloads:
+                self.downloads.remove(item)
+                self._save_history()
+                self.get_screen('downloads').refresh(self.downloads)
+        except Exception:
+            pass
+
     def show_download_menu(self, item):
         def delete_item():
-            try:
-                if item in self.downloads:
-                    self.downloads.remove(item)
-                    self._save_history()
-                    self.get_screen('downloads').refresh(self.downloads)
-            except Exception:
-                pass
+            self.delete_download(item)
         def open_file():
             self.open_folder()
         def play_item():
@@ -1881,6 +2697,13 @@ class AppMain(App):
     def _on_keyboard(self, window, key, scancode, codepoint, modifiers):
         if key == 27:
             m = self.manager
+            d = getattr(m, '_last_dialog', None)
+            if d is not None and getattr(d, 'window', None):
+                try:
+                    d.dismiss()
+                    return True
+                except Exception:
+                    pass
             if m._back_stack:
                 m.go_back()
             else:
