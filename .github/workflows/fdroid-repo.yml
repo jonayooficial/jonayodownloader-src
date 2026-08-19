@@ -52,16 +52,20 @@ jobs:
           pip install --upgrade pip
           pip install fdroidserver
 
-      - name: Install Java + Android build-tools
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android build-tools (direct download)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends default-jdk unzip
-          mkdir -p /opt/android/cmdline-tools
-          curl -sSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q /tmp/cmdtools.zip -d /opt/android/cmdline-tools
-          mv /opt/android/cmdline-tools/cmdline-tools /opt/android/cmdline-tools/latest
-          yes | /opt/android/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null 2>&1 || true
-          /opt/android/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0" >/dev/null
+          mkdir -p /opt/android
+          curl -fsSL -o /tmp/bt.zip https://dl.google.com/android/repository/build-tools_r34-linux.zip
+          unzip -q /tmp/bt.zip -d /opt/android/build-tools-raw
+          mkdir -p /opt/android/build-tools/34.0.0
+          cp -r /opt/android/build-tools-raw/*/* /opt/android/build-tools/34.0.0/ 2>/dev/null || cp -r /opt/android/build-tools-raw/* /opt/android/build-tools/34.0.0/
+          chmod +x /opt/android/build-tools/34.0.0/* 2>/dev/null || true
+          ls -la /opt/android/build-tools/34.0.0/
           echo "/opt/android/build-tools/34.0.0" >> "$GITHUB_PATH"
           echo "ANDROID_HOME=/opt/android" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=/opt/android" >> "$GITHUB_ENV"
