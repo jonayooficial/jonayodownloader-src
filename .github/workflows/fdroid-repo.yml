@@ -9,8 +9,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
   actions: read
 
 jobs:
@@ -65,7 +63,6 @@ jobs:
           mkdir -p /opt/android/build-tools/34.0.0
           cp -r /opt/android/build-tools-raw/*/* /opt/android/build-tools/34.0.0/ 2>/dev/null || cp -r /opt/android/build-tools-raw/* /opt/android/build-tools/34.0.0/
           chmod +x /opt/android/build-tools/34.0.0/* 2>/dev/null || true
-          ls -la /opt/android/build-tools/34.0.0/
           echo "/opt/android/build-tools/34.0.0" >> "$GITHUB_PATH"
           echo "ANDROID_HOME=/opt/android" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=/opt/android" >> "$GITHUB_ENV"
@@ -80,7 +77,7 @@ jobs:
           cp incoming/*.apk fdroid/repo/
           mv fdroid_keystore.p12 fdroid/keystore.p12
           cat > fdroid/config.yml <<'EOF'
-          repo_url: https://jonayooficial.github.io/jonayodownloader-android/repo
+          repo_url: https://jonayooficial.github.io/jonayodownloader-fdroid/repo
           repo_name: Jonayo Downloader
           repo_description: Descargas y streaming de videos y musica (YouTube)
           repo_keyalias: ${{ secrets.RELEASE_KEY_ALIAS }}
@@ -112,24 +109,19 @@ jobs:
           cd fdroid
           fdroid update --create-metadata --pretty
 
-      - name: List output
+      - name: Publish to public fdroid repo
+        env:
+          PUBLISH_TOKEN: ${{ secrets.FDROID_PUBLISH_TOKEN }}
         run: |
-          ls -la fdroid/repo/
-
-      - name: Stage for Pages (/repo/)
-        run: |
-          mkdir -p site/repo
-          cp -r fdroid/repo/. site/repo/
-          ls -la site/repo/
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-      - name: Deploy Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          set -eux
+          rm -rf publish
+          git clone --quiet --depth 1 \
+            "https://x-access-token:${PUBLISH_TOKEN}@github.com/jonayooficial/jonayodownloader-fdroid.git" publish
+          rm -rf publish/repo
+          cp -r fdroid/repo publish/repo
+          cd publish
+          git config user.name "jonayooficial"
+          git config user.email "jonayooficial@users.noreply.github.com"
+          git add -A
+          git -c user.name="jonayooficial" -c user.email="jonayooficial@users.noreply.github.com" commit --quiet -m "Actualizar repo F-Droid $(date -u +%Y%m%d-%H%M%S)"
+          git push --quiet origin main

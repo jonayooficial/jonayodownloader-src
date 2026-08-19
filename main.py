@@ -1401,16 +1401,15 @@ class M(ScreenManager):
         except Exception as e:
             crashlog.write_log('Fullscreen fallo: ' + str(e)[:120])
 
-    def _jni_orientation(self, landscape):
-        """Rota la app a horizontal/vertical para reproducir (como YouTube)."""
+    def _jni_rotation(self, sensor):
+        """Modo sensor: el reproductor sigue la rotacion del telefono. False -> vuelve a vertical."""
         try:
             from jnius import autoclass
             ActivityInfo = autoclass('android.content.pm.ActivityInfo')
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             act = PythonActivity.mActivity
-            act.runOnUiThread(lambda: act.setRequestedOrientation(
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE if landscape
-                else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT))
+            o = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR if sensor else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            act.runOnUiThread(lambda: act.setRequestedOrientation(o))
         except Exception as e:
             crashlog.write_log('Orientacion fallo: ' + str(e)[:120])
 
@@ -1429,7 +1428,7 @@ class M(ScreenManager):
         try:
             title=safe_text((item or {}).get('title',''),os.path.basename(source))
             state={'mode':'video','fs':False,'drag':False,'failed':False,'hidden':False,
-                   'sound':None,'ended':False,'rate':1.0}
+                   'sound':None,'ended':False,'rate':1.0,'manual_fs':False,'land':False}
             d=ModalView(size_hint=(1,1),background_color=(0,0,0,1),auto_dismiss=False)
             root=FloatLayout()
             v=Video(source=source,state='play',volume=1,allow_stretch=True,keep_ratio=True,
@@ -1474,7 +1473,7 @@ class M(ScreenManager):
             root.add_widget(thin)
 
             d.add_widget(root); self._last_dialog=d; self._player_dialog=d
-            self._jni_orientation(True)
+            self._jni_rotation(True)
             d.open()
             crashlog.write_log('Reproductor interno abierto: '+safe_text((item or {}).get('title'),os.path.basename(source)))
             t0=[time.time()]
@@ -1554,6 +1553,7 @@ class M(ScreenManager):
 
             def toggle_fs(*_):
                 state['fs']=not state['fs']
+                state['manual_fs']=state['fs']
                 self._jni_fs(state['fs'])
                 show_controls()
             fsb.bind(on_release=toggle_fs)
@@ -1576,7 +1576,7 @@ class M(ScreenManager):
                     self._play_temp = None
                 if state['fs']:
                     self._jni_fs(False)
-                self._jni_orientation(False)
+                self._jni_rotation(False)
                 for ev in hide_ev:
                     if ev:
                         try: ev.cancel()
@@ -1589,6 +1589,21 @@ class M(ScreenManager):
 
             def _tick(_dt):
                 try:
+                    try:
+                        w,h=Window.size
+                        land=h<w
+                        if land!=state['land']:
+                            state['land']=land
+                            if land:
+                                state['fs']=True
+                                self._jni_fs(True)
+                                show_controls()
+                            elif not state.get('manual_fs'):
+                                state['fs']=False
+                                self._jni_fs(False)
+                                show_controls()
+                    except Exception as e:
+                        crashlog.write_log('Orientacion tick fallo: '+str(e)[:120])
                     dur=v.duration or 0; pos=v.position or 0
                     if not state['drag'] and dur:
                         sl.max=dur; sl.value=pos
@@ -2190,7 +2205,8 @@ class M(ScreenManager):
                 return
         try:
             title = safe_text((item or {}).get('title', ''), os.path.basename(path))
-            state = {'mode': 'video', 'fs': False, 'drag': False, 'failed': False, 'sound': None}
+            state = {'mode': 'video', 'fs': False, 'drag': False, 'failed': False, 'sound': None,
+                     'manual_fs': False, 'land': False}
             d = ModalView(size_hint=(1, 1), background_color=(0, 0, 0, 0), auto_dismiss=False)
             root = BoxLayout(orientation='vertical', spacing=dp(2),
                              padding=(dp(2), dp(self._status_bar_dp()), dp(2), dp(2)))
@@ -2231,7 +2247,7 @@ class M(ScreenManager):
             d.add_widget(root)
             self._last_dialog = d
             self._player_dialog = d
-            self._jni_orientation(True)
+            self._jni_rotation(True)
             d.open()
             crashlog.write_log('Reproductor interno abierto: ' + os.path.basename(path))
             t0 = [time.time()]
@@ -2297,6 +2313,7 @@ class M(ScreenManager):
 
             def _toggle_fs(*_):
                 state['fs'] = not state['fs']
+                state['manual_fs'] = state['fs']
                 self._jni_fs(state['fs'])
             fsb.bind(on_release=_toggle_fs)
 
@@ -2320,7 +2337,7 @@ class M(ScreenManager):
                     self._play_temp = None
                 if state['fs']:
                     self._jni_fs(False)
-                self._jni_orientation(False)
+                self._jni_rotation(False)
                 try:
                     tick_ev.cancel()
                 except Exception:
@@ -2331,6 +2348,19 @@ class M(ScreenManager):
 
             def _tick(_dt):
                 try:
+                    try:
+                        w, h = Window.size
+                        land = h < w
+                        if land != state['land']:
+                            state['land'] = land
+                            if land:
+                                state['fs'] = True
+                                self._jni_fs(True)
+                            elif not state.get('manual_fs'):
+                                state['fs'] = False
+                                self._jni_fs(False)
+                    except Exception as e:
+                        crashlog.write_log('Orientacion tick fallo: ' + str(e)[:120])
                     dur = v.duration or 0
                     pos = v.position or 0
                     if not state['drag'] and dur:
