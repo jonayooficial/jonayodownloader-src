@@ -1,0 +1,10 @@
+bin/
+bin-debug/
+build/
+.dccache/
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.apk
+*.keystore

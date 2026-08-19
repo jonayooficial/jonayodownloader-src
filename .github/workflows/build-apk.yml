@@ -1,0 +1,73 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-pip python3-venv python3-dev \
+            build-essential git unzip \
+            libffi-dev libssl-dev autoconf automake libtool \
+            pkg-config zlib1g-dev libncurses5-dev libltdl-dev \
+            ccache
+          python3 -m pip install --user buildozer cython==3.0.11
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Decode signing keystore
+        run: |
+          echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | base64 -d > release.keystore
+          ls -la release.keystore
+
+      - name: Build signed release APK
+        env:
+          APP_ANDROID_KEYSTORE: ${{ github.workspace }}/release.keystore
+          APP_ANDROID_KEYALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          APP_ANDROID_STOREPASS: ${{ secrets.RELEASE_STORE_PASS }}
+          APP_ANDROID_KEYPASS: ${{ secrets.RELEASE_STORE_PASS }}
+          P4A_RELEASE_KEYSTORE: ${{ github.workspace }}/release.keystore
+          P4A_RELEASE_KEYALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.RELEASE_STORE_PASS }}
+          P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.RELEASE_STORE_PASS }}
+          URL_ffmpeg: https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n6.1.2.tar.gz
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          yes | buildozer -v android release
+
+      - name: List build output
+        run: |
+          ls -la bin/
+          APK=$(ls bin/*.apk | head -n 1)
+          echo "APK=$APK"
+          ls -la "$APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: bin/*.apk
+
+      - name: Release APK
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: bin/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

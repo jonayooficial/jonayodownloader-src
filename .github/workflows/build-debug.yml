@@ -1,0 +1,60 @@
+name: Build Debug APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['main.py', 'crashlog.py', 'updater.py', 'buildozer.spec']
+
+jobs:
+  build-debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-pip python3-venv python3-dev \
+            build-essential git unzip \
+            libffi-dev libssl-dev autoconf automake libtool \
+            pkg-config zlib1g-dev libncurses5-dev libltdl-dev \
+            ccache
+          python3 -m pip install --user buildozer cython==3.0.11
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build debug APK
+        env:
+          URL_ffmpeg: https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n6.1.2.tar.gz
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          yes | buildozer -v android debug
+
+      - name: List build output
+        run: |
+          ls -la bin/
+          APK=$(ls bin/*.apk | head -n 1)
+          echo "APK=$APK"
+          ls -la "$APK"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-debug
+          path: bin/*.apk
+
+      - name: Release debug APK
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: bin/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

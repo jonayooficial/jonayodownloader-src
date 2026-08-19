@@ -1,0 +1,14 @@
+J Youtube Downloader v1.8.2
+
+Correcciones visuales y de interacción:
+- Chips y navegación inferior reconstruidos con ButtonBehavior + BoxLayout.
+- Eliminado el solapamiento de iconos/textos producido por Button con hijos complejos.
+- VideoRow táctil y más estable.
+- Menús contextuales protegidos contra excepciones.
+- Selector RadioRow robusto.
+- Normalización de títulos Unicode para evitar caracteres rotos.
+- Barra inferior fija fuera del ScrollView.
+- Nombre visible unificado a "J Youtube Downloader".
+- Splash cuadrado sin deformación.
+
+Validación local: py_compile de main.py, crashlog.py y updater.py.
