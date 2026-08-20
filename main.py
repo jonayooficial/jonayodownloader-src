@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '1.9.5'
+APP_VERSION = '1.9.6'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -1544,6 +1544,51 @@ class M(ScreenManager):
         except Exception as e:
             crashlog.write_log('Orientacion fallo: ' + str(e)[:120])
 
+    def _start_tilt_autorotate(self, state, toggle_fs):
+        """Detecta el giro FISICO del telefono con el acelerometro (plyer),
+        independiente del auto-rotate del sistema. Solo actua si el fullscreen
+        actual lo puso el propio giro (no pisa el boton manual)."""
+        try:
+            from plyer import accelerometer
+            accelerometer.enable()
+        except Exception as e:
+            crashlog.write_log('Acelerometro no disponible: ' + str(e)[:120])
+            return
+
+        state['_tilt_auto'] = False
+
+        def _poll(_dt):
+            try:
+                acc = accelerometer.acceleration
+                ax, ay, az = acc[:3]
+            except Exception:
+                return
+            if ax is None or ay is None:
+                return
+            landscape = abs(ax) > 6.0 and abs(ax) > abs(ay) * 1.3
+            portrait = abs(ay) > 6.0 and abs(ay) > abs(ax) * 1.3
+            if landscape and not state['fs']:
+                state['_tilt_auto'] = True
+                toggle_fs()
+            elif portrait and state['fs'] and state.get('_tilt_auto'):
+                state['_tilt_auto'] = False
+                toggle_fs()
+
+        state['_tilt_ev'] = Clock.schedule_interval(_poll, 0.35)
+
+    def _stop_tilt_autorotate(self, state):
+        ev = state.get('_tilt_ev')
+        if ev:
+            try:
+                ev.cancel()
+            except Exception:
+                pass
+        try:
+            from plyer import accelerometer
+            accelerometer.disable()
+        except Exception:
+            pass
+
     def _play_internal(self, source, item=None):
         """Reproductor interno tipo YouTube para archivos locales o streams HTTPS."""
         global Video
@@ -1662,6 +1707,7 @@ class M(ScreenManager):
                         except Exception: pass
                 try: tick_ev.cancel()
                 except Exception: pass
+                self._stop_tilt_autorotate(state)
                 self._player_dialog=None
             d=PlayerOverlay(root,sync_player_layout,on_close_player)
             self._last_dialog=d; self._player_dialog=d
@@ -1760,6 +1806,7 @@ class M(ScreenManager):
             fsb.bind(on_release=toggle_fs)
             cb.bind(on_release=lambda *_: d.dismiss())
             qb.bind(on_release=lambda *_: self.open_queue())
+            self._start_tilt_autorotate(state, toggle_fs)
 
             def _tick(_dt):
                 try:
@@ -2490,6 +2537,7 @@ class M(ScreenManager):
                     tick_ev.cancel()
                 except Exception:
                     pass
+                self._stop_tilt_autorotate(state)
                 self._player_dialog = None
             d = PlayerOverlay(root, _relayout, on_close_player)
             self._last_dialog = d
@@ -2562,6 +2610,7 @@ class M(ScreenManager):
                 Clock.schedule_once(_relayout, 0.10)
                 Clock.schedule_once(_relayout, 0.40)
             fsb.bind(on_release=_toggle_fs)
+            self._start_tilt_autorotate(state, _toggle_fs)
 
             cb.bind(on_release=lambda *_: d.dismiss())
 
