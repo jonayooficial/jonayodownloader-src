@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '1.9.2'
+APP_VERSION = '1.9.3'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -1120,6 +1120,39 @@ class M(ScreenManager):
             pass
         return url
 
+    def _thumb_cache_path(self):
+        return os.path.join(self._data_dir(), '.thumbs')
+
+    def _thumb_path(self, url):
+        """Cache local persistente de miniaturas: si la imagen ya esta en disco
+        devuelve la ruta local (carga instantanea); si no, la baja en un hilo
+        secundario y devuelve la URL original para que se vea al instante."""
+        try:
+            if not url or 'i.ytimg.com/vi/' not in url:
+                return url
+            vid = url.split('/vi/')[1].split('/')[0]
+            cache_dir = self._thumb_cache_path()
+            os.makedirs(cache_dir, exist_ok=True)
+            local = os.path.join(cache_dir, vid + '.jpg')
+            if os.path.exists(local) and os.path.getsize(local) > 500:
+                return local
+            threading.Thread(target=self._thumb_download, args=(url, local), daemon=True).start()
+        except Exception:
+            pass
+        return url
+
+    def _thumb_download(self, url, local):
+        try:
+            import urllib.request
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                data = r.read()
+            if data and len(data) > 500:
+                with open(local, 'wb') as f:
+                    f.write(data)
+        except Exception:
+            pass
+
     def _to_video(self, e, idx):
         dur = e.get('duration') or 0
         dur_txt = f"{int(dur // 60)}:{int(dur % 60):02d}" if dur else ''
@@ -1131,7 +1164,7 @@ class M(ScreenManager):
             'id': vid,
             'title': e.get('title', 'Sin titulo'),
             'url': page_url,
-            'thumb': self._fast_thumb(e.get('thumbnail') or ''),
+            'thumb': self._thumb_path(self._fast_thumb(e.get('thumbnail') or '')),
             'duration': dur_txt,
             'channel': e.get('uploader', ''),
             'views': self._fmt_views(e.get('view_count')),
