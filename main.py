@@ -2302,10 +2302,34 @@ class M(ScreenManager):
         except Exception:
             pass
 
+    def _play_system(self, item):
+        """Abre el reproductor del sistema de Android con el archivo (URI publica)."""
+        try:
+            uri = (item or {}).get('public_uri') or ''
+            mime = 'audio/mpeg' if (item or {}).get('format') == 'MP3' else 'video/mp4'
+            if IS_ANDROID and uri:
+                from jnius import autoclass
+                Intent = autoclass('android.content.Intent')
+                Uri = autoclass('android.net.Uri')
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                intent = Intent(Intent.ACTION_VIEW)
+                intent.setDataAndType(Uri.parse(uri), mime)
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                PythonActivity.mActivity.startActivity(intent)
+                return True
+        except Exception as e:
+            crashlog.write_log('Reproductor sistema fallo: ' + str(e)[:140])
+        return False
+
     def play_download(self, item):
         """Reproduce el archivo descargado. Intenta reproducirlo en la app
         (reproductor interno); si no es posible, usa el reproductor del sistema."""
         try:
+            if getattr(self, '_player_fallback', False):
+                # Si el interno ya fallo una vez, no volver a intentarlo en bucle.
+                self._player_fallback = False
+                if self._play_system(item):
+                    return
             local = item.get('local_path') or ''
             if local and os.path.isfile(local):
                 self._play_internal(local, item)
@@ -2537,8 +2561,9 @@ class M(ScreenManager):
                         self._player_fallback = True
                         crashlog.write_log('Reproductor: sin textura en 8s -> reproductor del sistema')
                         d.dismiss()
-                        self._info('Reproductor', 'El reproductor interno no pudo renderizar el video.\nAbriendo el reproductor del sistema...')
-                        self.play_download(item)
+                        # Directo al reproductor del sistema (evita reabrir el interno en bucle).
+                        if not self._play_system(item):
+                            self._info('Reproductor', 'El reproductor interno no pudo renderizar el video.')
                 except Exception:
                     pass
             tick_ev = Clock.schedule_interval(_tick, 0.5)
