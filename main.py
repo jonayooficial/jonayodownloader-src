@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '1.8.9'
+APP_VERSION = '1.9.0'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -1401,15 +1401,23 @@ class M(ScreenManager):
         except Exception as e:
             crashlog.write_log('Fullscreen fallo: ' + str(e)[:120])
 
-    def _jni_rotation(self, sensor):
-        """Modo sensor: el reproductor sigue la rotacion del telefono. False -> vuelve a vertical."""
+    def _jni_rotation(self, landscape=False):
+        """Mantiene la app vertical y solo usa horizontal en fullscreen."""
         try:
             from jnius import autoclass
             ActivityInfo = autoclass('android.content.pm.ActivityInfo')
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             act = PythonActivity.mActivity
-            o = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR if sensor else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            act.runOnUiThread(lambda: act.setRequestedOrientation(o))
+            orientation = (ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                           if landscape else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+
+            def _set_orientation():
+                try:
+                    act.setRequestedOrientation(orientation)
+                except Exception as e:
+                    crashlog.write_log('Orientacion UI fallo: ' + str(e)[:120])
+
+            act.runOnUiThread(_set_orientation)
         except Exception as e:
             crashlog.write_log('Orientacion fallo: ' + str(e)[:120])
 
@@ -1473,8 +1481,26 @@ class M(ScreenManager):
             root.add_widget(thin)
 
             d.add_widget(root); self._last_dialog=d; self._player_dialog=d
-            self._jni_rotation(True)
+
+            def sync_player_layout(*_):
+                # Recalcula la capa completa tras cada cambio de ventana/orientacion.
+                try:
+                    top.pos = (0, max(0, root.height - top.height))
+                    top.size = (root.width, top.height)
+                    bottom.pos = (0, 0)
+                    bottom.size = (root.width, bottom.height)
+                    thin.pos = (0, max(0, root.height - thin.height))
+                    thin.size = (root.width, thin.height)
+                    v.pos = (0, 0); v.size = root.size
+                    touch_layer.pos = (0, 0); touch_layer.size = root.size
+                except Exception:
+                    pass
+
+            root.bind(size=sync_player_layout, pos=sync_player_layout)
             d.open()
+            # Al abrir el reproductor NO se gira el telefono.
+            Clock.schedule_once(sync_player_layout, 0)
+            Clock.schedule_once(sync_player_layout, 0.25)
             crashlog.write_log('Reproductor interno abierto: '+safe_text((item or {}).get('title'),os.path.basename(source)))
             t0=[time.time()]
             hide_ev=[None]
@@ -1552,10 +1578,19 @@ class M(ScreenManager):
             speed.bind(on_release=lambda *_: self._open_speed(v))
 
             def toggle_fs(*_):
-                state['fs']=not state['fs']
-                state['manual_fs']=state['fs']
-                self._jni_fs(state['fs'])
+                state['fs'] = not state['fs']
+                state['manual_fs'] = state['fs']
+                if state['fs']:
+                    self._jni_fs(True)
+                    self._jni_rotation(True)
+                else:
+                    self._jni_fs(False)
+                    self._jni_rotation(False)
                 show_controls()
+                # Esperar al nuevo tamano de la ventana evita que X/fullscreen
+                # queden en una coordenada vieja durante el giro.
+                Clock.schedule_once(sync_player_layout, 0.10)
+                Clock.schedule_once(sync_player_layout, 0.40)
             fsb.bind(on_release=toggle_fs)
             cb.bind(on_release=lambda *_: d.dismiss())
             qb.bind(on_release=lambda *_: self.open_queue())
@@ -1589,21 +1624,9 @@ class M(ScreenManager):
 
             def _tick(_dt):
                 try:
-                    try:
-                        w,h=Window.size
-                        land=h<w
-                        if land!=state['land']:
-                            state['land']=land
-                            if land:
-                                state['fs']=True
-                                self._jni_fs(True)
-                                show_controls()
-                            elif not state.get('manual_fs'):
-                                state['fs']=False
-                                self._jni_fs(False)
-                                show_controls()
-                    except Exception as e:
-                        crashlog.write_log('Orientacion tick fallo: '+str(e)[:120])
+                    # No se usa el sensor: la orientacion solo cambia mediante
+                    # el boton de pantalla completa.
+                    sync_player_layout()
                     dur=v.duration or 0; pos=v.position or 0
                     if not state['drag'] and dur:
                         sl.max=dur; sl.value=pos
@@ -2247,8 +2270,8 @@ class M(ScreenManager):
             d.add_widget(root)
             self._last_dialog = d
             self._player_dialog = d
-            self._jni_rotation(True)
             d.open()
+            # El reproductor abre en vertical; solo fullscreen gira a horizontal.
             crashlog.write_log('Reproductor interno abierto: ' + os.path.basename(path))
             t0 = [time.time()]
 
@@ -2315,6 +2338,7 @@ class M(ScreenManager):
                 state['fs'] = not state['fs']
                 state['manual_fs'] = state['fs']
                 self._jni_fs(state['fs'])
+                self._jni_rotation(state['fs'])
             fsb.bind(on_release=_toggle_fs)
 
             def _on_dismiss(*_):
@@ -2348,19 +2372,8 @@ class M(ScreenManager):
 
             def _tick(_dt):
                 try:
-                    try:
-                        w, h = Window.size
-                        land = h < w
-                        if land != state['land']:
-                            state['land'] = land
-                            if land:
-                                state['fs'] = True
-                                self._jni_fs(True)
-                            elif not state.get('manual_fs'):
-                                state['fs'] = False
-                                self._jni_fs(False)
-                    except Exception as e:
-                        crashlog.write_log('Orientacion tick fallo: ' + str(e)[:120])
+                    # Sin sensor: el usuario controla el giro exclusivamente
+                    # mediante pantalla completa.
                     dur = v.duration or 0
                     pos = v.position or 0
                     if not state['drag'] and dur:

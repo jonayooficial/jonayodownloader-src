@@ -31,6 +31,14 @@ jobs:
           python3 -m pip install --user buildozer cython==3.0.11
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL /usr/share/swift
+          sudo apt-get clean
+          pip cache purge || true
+          ccache -M 500M || true
+          df -h
+
       - name: Build debug APK
         env:
           URL_ffmpeg: https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n6.1.2.tar.gz
