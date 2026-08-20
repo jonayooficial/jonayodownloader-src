@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '1.9.4'
+APP_VERSION = '1.9.5'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -194,6 +194,28 @@ class B(Button):
         self.halign = kw.get('halign', 'center')
         self.valign = 'middle'
         self.text_size = (None, None)
+
+
+class TouchBlockingFloatLayout(FloatLayout):
+    """FloatLayout que consume todos los toques dentro de su area.
+
+    El reproductor se agrega como capa encima de Window; sin esto, los toques
+    sobre el video (donde no hay ningun boton) atraviesan la capa y abren el
+    menu del elemento que esta detras. Al devolver siempre True se bloquea la
+    propagacion hacia las tarjetas del fondo; los botones del reproductor
+    siguen funcionando porque super() primero les reparte el toque.
+    """
+    def on_touch_down(self, touch):
+        super().on_touch_down(touch)
+        return True
+
+    def on_touch_move(self, touch):
+        super().on_touch_move(touch)
+        return True
+
+    def on_touch_up(self, touch):
+        super().on_touch_up(touch)
+        return True
 
 
 class PlayerOverlay:
@@ -1538,7 +1560,7 @@ class M(ScreenManager):
             title=safe_text((item or {}).get('title',''),os.path.basename(source))
             state={'mode':'video','fs':False,'drag':False,'failed':False,'hidden':False,
                    'sound':None,'ended':False,'rate':1.0,'manual_fs':False,'land':False}
-            root=FloatLayout()
+            root=TouchBlockingFloatLayout()
             with root.canvas.before:
                 Color(0,0,0,1)
                 root._bg=Rectangle(pos=root.pos,size=root.size)
