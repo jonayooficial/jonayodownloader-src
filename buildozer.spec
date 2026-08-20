@@ -31,11 +31,12 @@ android.minapi = 24
 android.allow_backup = True
 android.build_tools_version = 33.0.0
 
-# APK universal: las 4 arquitecturas para funcionar en cualquier Android
-# (ARM 64-bit, ARM 32-bit, x86 64-bit y x86 32-bit). OJO: multiplica el tiempo de build.
+# ARM-only (arm64-v8a + armeabi-v7a): cubre todos los telefonos reales. Se excluyen
+# x86_64/x86 (solo emuladores/PC) para que el APK quede por debajo de 100 MB, que es
+# el limite de archivo de GitHub (necesario para publicar el repo F-Droid en Pages).
 # IMPORTANTE: separadas por COMA (buildozer 1.5 getlist divide solo por comas; con
 # espacios pasa un solo valor con espacios y p4a falla por storage-dir con espacios).
-android.archs = arm64-v8a,armeabi-v7a,x86_64,x86
+android.archs = arm64-v8a,armeabi-v7a
 
 # NDK 28c: soporta tamaños de página de 16 KB de Android 15+ (r25b crasheaba al arrancar)
 android.ndk = 28c
