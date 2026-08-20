@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '1.9.3'
+APP_VERSION = '1.9.4'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -100,6 +100,7 @@ def draw_icon(w, kind, color=WHITE):
     specs = {
         'close': 2, 'fs': 8, 'music': 3, 'play': 3, 'pause': 2,
         'next': 4, 'prev': 4, 'queue': 5, 'speed': 2, 'quality': 4,
+        'dl': 3, 'stop': 4,
     }
     with w.canvas.after:
         Color(*color)
@@ -163,6 +164,19 @@ def draw_icon(w, kind, color=WHITE):
             for i in range(20):
                 a=2*math.pi*i/20; pts += [cx+r*math.cos(a),cy+r*math.sin(a)]
             L[0].points=pts; L[1].points=[cx,cy-r,cx,y+h*.28]; L[2].points=[cx,y+h*.28,x+s*.55,y+h*.22]
+        elif kind == 'dl':
+            # flecha hacia abajo (descargar)
+            cx=x+s*.5
+            L[0].points=[cx,y+h*.16,cx,y+h*.72]
+            L[1].points=[cx,y+h*.72,x+s*.32,y+h*.40]
+            L[2].points=[cx,y+h*.72,x+s*.68,y+h*.40]
+        elif kind == 'stop':
+            # cuadrado (detener)
+            m=dp(7)
+            L[0].points=[x+m,y+m,x+s-m,y+m]
+            L[1].points=[x+s-m,y+m,x+s-m,y+h-m]
+            L[2].points=[x+s-m,y+h-m,x+m,y+h-m]
+            L[3].points=[x+m,y+h-m,x+m,y+m]
     w.bind(pos=sync, size=sync)
     sync()
     return w
@@ -711,17 +725,20 @@ class MusicRow(ClickableBox):
                              size_hint_y=None, height=dp(17), text_size=(None, None),
                              shorten=True, shorten_from='right'))
         self.add_widget(col)
-        self.play_btn = B(text='▶', font_size=sp(12), size_hint=(None, None), size=(dp(44), dp(44)))
+        self.play_btn = B(text='', size_hint=(None, None), size=(dp(44), dp(44)))
         rr(self.play_btn, SUR2, 12, BORDER)
+        draw_icon(self.play_btn, 'play')
         self.add_widget(self.play_btn)
-        dl = B(text='⬇', font_size=sp(12), size_hint=(None, None), size=(dp(44), dp(44)))
+        dl = B(text='', size_hint=(None, None), size=(dp(44), dp(44)))
         rr(dl, RED, 12)
+        draw_icon(dl, 'dl')
         self.add_widget(dl)
         dl.bind(on_release=lambda *_: self.manager.music_download(self.item))
     def bind_play(self, cb):
         self.play_btn.bind(on_release=lambda *_: cb(self.item, self))
     def set_playing(self, playing):
-        self.play_btn.text = '◼' if playing else '▶'
+        self.play_btn.canvas.after.clear()
+        draw_icon(self.play_btn, 'stop' if playing else 'play')
 
 
 class Music(Base):
@@ -746,7 +763,7 @@ class Music(Base):
         self.query_field = q
         c.add_widget(q)
         hint = Card(size_hint_y=None, height=dp(40))
-        hint.add_widget(Label(text='▶ escuchar · ⬇ descargar solo audio', color=DIM, font_size=sp(9), halign='center'))
+        hint.add_widget(Label(text='▶ escuchar · ▼ descargar solo audio', color=DIM, font_size=sp(9), halign='center'))
         c.add_widget(hint)
         box = BoxLayout(orientation='vertical', spacing=dp(8), size_hint_y=None)
         box.bind(minimum_height=box.setter('height')); self.results_box = box; c.add_widget(box)
@@ -2365,7 +2382,7 @@ class M(ScreenManager):
             root.add_widget(ascreen)
             ctrl = BoxLayout(size_hint=(1, None), height=dp(56), spacing=dp(8), padding=(dp(8), dp(4)))
             rr(ctrl, (0, 0, 0, 0.55), 0)
-            pb = B(text='⏸', font_size=sp(14), size_hint_x=None, width=dp(52)); rr(pb, SUR2, 10, BORDER)
+            pb = B(text='', size_hint_x=None, width=dp(52)); rr(pb, SUR2, 10, BORDER); draw_icon(pb, 'pause')
             sl = Slider(min=0, max=1, value=0, size_hint_x=1)
             tml = Label(text='0:00 / 0:00', color=MUTED, font_size=sp(9), size_hint_x=None, width=dp(112))
             ctrl.add_widget(pb); ctrl.add_widget(sl); ctrl.add_widget(tml)
@@ -2460,7 +2477,7 @@ class M(ScreenManager):
                     v.opacity = 0
                     ascreen.opacity = 1
                     state['mode'] = 'audio'
-                    pb.text = '⏸'
+                    pb.canvas.after.clear(); draw_icon(pb, 'pause')
                 else:
                     if state['sound'] is not None:
                         try:
@@ -2473,7 +2490,7 @@ class M(ScreenManager):
                     state['mode'] = 'video'
                     if v.state != 'play':
                         v.state = 'play'
-                    pb.text = '⏸'
+                    pb.canvas.after.clear(); draw_icon(pb, 'pause')
             ab.bind(on_release=lambda *_: _set_mode('audio' if state['mode'] != 'audio' else 'video'))
 
             def _toggle_play(*_):
@@ -2481,14 +2498,14 @@ class M(ScreenManager):
                     s = state['sound']
                     if s is not None:
                         if getattr(s, 'state', '') == 'playing':
-                            s.stop(); pb.text = '▶'
+                            s.stop(); pb.canvas.after.clear(); draw_icon(pb, 'play')
                         else:
-                            s.play(); pb.text = '⏸'
+                            s.play(); pb.canvas.after.clear(); draw_icon(pb, 'pause')
                 else:
                     if v.state == 'play':
-                        v.state = 'pause'; pb.text = '▶'
+                        v.state = 'pause'; pb.canvas.after.clear(); draw_icon(pb, 'play')
                     else:
-                        v.state = 'play'; pb.text = '⏸'
+                        v.state = 'play'; pb.canvas.after.clear(); draw_icon(pb, 'pause')
             pb.bind(on_release=_toggle_play)
 
             def _toggle_fs(*_):
