@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '1.9.0'
+APP_VERSION = '1.9.1'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -1448,7 +1448,7 @@ class M(ScreenManager):
             touch_layer.background_color=(0,0,0,0)
             root.add_widget(touch_layer)
 
-            top=BoxLayout(size_hint=(1,None),height=dp(52),pos_hint={'top':1},spacing=dp(4),
+            top=BoxLayout(size_hint=(1,None),height=dp(52),spacing=dp(4),
                           padding=(dp(8),dp(6)))
             rr(top,(0,0,0,0.58),0)
             tl=Label(text=title,color=WHITE,font_size=sp(12),bold=True,halign='left',valign='middle',
@@ -1462,7 +1462,7 @@ class M(ScreenManager):
             top.add_widget(qlabel); top.add_widget(speed); top.add_widget(fsb); top.add_widget(cb)
             root.add_widget(top)
 
-            bottom=BoxLayout(size_hint=(1,None),height=dp(68),pos_hint={'x':0,'y':0},spacing=dp(5),
+            bottom=BoxLayout(size_hint=(1,None),height=dp(68),spacing=dp(5),
                              padding=(dp(8),dp(5)))
             rr(bottom,(0,0,0,0.62),0)
             pb=B(text='',size_hint_x=None,width=dp(44)); rr(pb,SUR2,9,BORDER); draw_icon(pb,'pause')
@@ -1477,26 +1477,32 @@ class M(ScreenManager):
             root.add_widget(bottom)
 
             # Barra fina superior tipo YouTube.
-            thin=ProgressBar(max=1,value=0,size_hint=(1,None),height=dp(3),pos_hint={'x':0,'top':1})
+            thin=ProgressBar(max=1,value=0,size_hint=(1,None),height=dp(3))
             root.add_widget(thin)
 
             d.add_widget(root); self._last_dialog=d; self._player_dialog=d
+            d.size_hint=(None,None); d.size=Window.size
 
             def sync_player_layout(*_):
                 # Recalcula la capa completa tras cada cambio de ventana/orientacion.
+                # CLAVE: el ModalView no siempre se redimensiona al girar; se fuerza
+                # d/root al tamano real de la ventana y se reposicionan las barras.
                 try:
+                    d.size = Window.size
+                    root.size = Window.size
                     top.pos = (0, max(0, root.height - top.height))
-                    top.size = (root.width, top.height)
+                    top.width = root.width
                     bottom.pos = (0, 0)
-                    bottom.size = (root.width, bottom.height)
+                    bottom.width = root.width
                     thin.pos = (0, max(0, root.height - thin.height))
-                    thin.size = (root.width, thin.height)
+                    thin.width = root.width
                     v.pos = (0, 0); v.size = root.size
                     touch_layer.pos = (0, 0); touch_layer.size = root.size
                 except Exception:
                     pass
 
             root.bind(size=sync_player_layout, pos=sync_player_layout)
+            Window.bind(size=sync_player_layout)
             d.open()
             # Al abrir el reproductor NO se gira el telefono.
             Clock.schedule_once(sync_player_layout, 0)
@@ -2270,6 +2276,22 @@ class M(ScreenManager):
             d.add_widget(root)
             self._last_dialog = d
             self._player_dialog = d
+            d.size_hint = (None, None)
+            d.size = Window.size
+
+            def _relayout(*_):
+                # El ModalView no siempre se redimensiona al girar: se fuerza al
+                # tamano real de la ventana para que las barras/botones no queden
+                # en coordenadas viejas tras el cambio de orientacion.
+                try:
+                    d.size = Window.size
+                    root.size = Window.size
+                except Exception:
+                    pass
+            root.bind(size=_relayout, pos=_relayout)
+            Window.bind(size=_relayout)
+            Clock.schedule_once(_relayout, 0)
+            Clock.schedule_once(_relayout, 0.30)
             d.open()
             # El reproductor abre en vertical; solo fullscreen gira a horizontal.
             crashlog.write_log('Reproductor interno abierto: ' + os.path.basename(path))
@@ -2339,6 +2361,8 @@ class M(ScreenManager):
                 state['manual_fs'] = state['fs']
                 self._jni_fs(state['fs'])
                 self._jni_rotation(state['fs'])
+                Clock.schedule_once(_relayout, 0.10)
+                Clock.schedule_once(_relayout, 0.40)
             fsb.bind(on_release=_toggle_fs)
 
             def _on_dismiss(*_):
@@ -2374,6 +2398,7 @@ class M(ScreenManager):
                 try:
                     # Sin sensor: el usuario controla el giro exclusivamente
                     # mediante pantalla completa.
+                    _relayout()
                     dur = v.duration or 0
                     pos = v.position or 0
                     if not state['drag'] and dur:
