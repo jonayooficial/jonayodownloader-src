@@ -51,7 +51,7 @@ if IS_ANDROID:
     crashlog.write_log("imports android OK")
 
 # ─── UI MODERNA ─────────────────────────────────────────────────
-from kivy.graphics import Color, RoundedRectangle, Line
+from kivy.graphics import Color, RoundedRectangle, Rectangle, Line
 from kivy.uix.floatlayout import FloatLayout
 
 BG      = (0.018, 0.027, 0.037, 1)
@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '1.9.1'
+APP_VERSION = '1.9.2'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -180,6 +180,57 @@ class B(Button):
         self.halign = kw.get('halign', 'center')
         self.valign = 'middle'
         self.text_size = (None, None)
+
+
+class PlayerOverlay:
+    """Capa del reproductor a pantalla completa (reemplaza al ModalView).
+
+    El ModalView NO se redimensionaba al girar la pantalla: tras pasar a
+    horizontal, las barras/botones del reproductor quedaban en coordenadas
+    viejas (o el video fuera de pantalla). Esta capa se agrega directo a
+    Window, se fuerza a Window.size en cada relayout y se quita al cerrar.
+    Mantiene la interfaz del ModalView (open/dismiss) para no tocar el resto.
+    """
+    def __init__(self, widget, relayout, on_close=None):
+        self.widget = widget
+        self.relayout = relayout
+        self.on_close = on_close
+        self._opened = False
+
+    @property
+    def window(self):
+        return True if self._opened else None
+
+    def open(self, *args):
+        if self._opened:
+            return
+        from kivy.core.window import Window
+        from kivy.clock import Clock
+        self._opened = True
+        Window.add_widget(self.widget)
+        Window.bind(size=self.relayout)
+        Clock.schedule_once(self.relayout, 0)
+        Clock.schedule_once(self.relayout, 0.25)
+        Clock.schedule_once(self.relayout, 0.6)
+
+    def dismiss(self, *args):
+        if not self._opened:
+            return
+        from kivy.core.window import Window
+        self._opened = False
+        try:
+            Window.remove_widget(self.widget)
+        except Exception:
+            pass
+        try:
+            Window.unbind(size=self.relayout)
+        except Exception:
+            pass
+        if self.on_close:
+            try:
+                self.on_close()
+            except Exception:
+                pass
 
 
 def safe_text(value, fallback=''):
@@ -1437,8 +1488,13 @@ class M(ScreenManager):
             title=safe_text((item or {}).get('title',''),os.path.basename(source))
             state={'mode':'video','fs':False,'drag':False,'failed':False,'hidden':False,
                    'sound':None,'ended':False,'rate':1.0,'manual_fs':False,'land':False}
-            d=ModalView(size_hint=(1,1),background_color=(0,0,0,1),auto_dismiss=False)
             root=FloatLayout()
+            with root.canvas.before:
+                Color(0,0,0,1)
+                root._bg=Rectangle(pos=root.pos,size=root.size)
+            def _bg_sync(*_):
+                root._bg.pos=root.pos; root._bg.size=root.size
+            root.bind(pos=_bg_sync,size=_bg_sync)
             v=Video(source=source,state='play',volume=1,allow_stretch=True,keep_ratio=True,
                     size_hint=(1,1),pos_hint={'x':0,'y':0})
             root.add_widget(v)
@@ -1480,33 +1536,65 @@ class M(ScreenManager):
             thin=ProgressBar(max=1,value=0,size_hint=(1,None),height=dp(3))
             root.add_widget(thin)
 
-            d.add_widget(root); self._last_dialog=d; self._player_dialog=d
-            d.size_hint=(None,None); d.size=Window.size
-
             def sync_player_layout(*_):
-                # Recalcula la capa completa tras cada cambio de ventana/orientacion.
-                # CLAVE: el ModalView no siempre se redimensiona al girar; se fuerza
-                # d/root al tamano real de la ventana y se reposicionan las barras.
+                # CLAVE: el ModalView NO se redimensionaba al girar y dejaba los
+                # botones en coordenadas viejas (y el video fuera de pantalla al
+                # expandir). Ahora la capa se agrega directo a Window y se fuerza a
+                # Window.size; ademas las barras se posicionan DENTRO del area
+                # visible del video (rectangulo 16:9 centrado), para que los
+                # botones queden sobre el video y no lejos de el.
                 try:
-                    d.size = Window.size
-                    root.size = Window.size
-                    top.pos = (0, max(0, root.height - top.height))
-                    top.width = root.width
-                    bottom.pos = (0, 0)
-                    bottom.width = root.width
-                    thin.pos = (0, max(0, root.height - thin.height))
-                    thin.width = root.width
-                    v.pos = (0, 0); v.size = root.size
-                    touch_layer.pos = (0, 0); touch_layer.size = root.size
+                    root.size=Window.size; root.pos=(0,0)
+                    sw,sh=float(Window.size[0]),float(Window.size[1])
+                    ar=16.0/9.0
+                    if sw/sh>ar:
+                        vh=sh; vw=sh*ar; vx=(sw-vw)/2.0; vy=0.0
+                    else:
+                        vw=sw; vh=sw/ar; vx=0.0; vy=(sh-vh)/2.0
+                    v.pos=(0,0); v.size=root.size
+                    touch_layer.pos=(0,0); touch_layer.size=root.size
+                    top.pos=(vx, vy+vh-top.height); top.width=vw
+                    bottom.pos=(vx, vy); bottom.width=vw
+                    thin.pos=(vx, vy+vh-thin.height); thin.width=vw
+                    land=sh<sw
+                    if land!=state['land']:
+                        state['land']=land
+                        if state['mode']=='video' and v.state=='play':
+                            # Girar con Kivy a veces deja el render del video en
+                            # coordenadas viejas; reiniciar la reproduccion lo
+                            # fuerza a redibujarse al nuevo tamano.
+                            v.state='pause'
+                            Clock.schedule_once(lambda dt: setattr(v,'state','play'),0.25)
                 except Exception:
                     pass
 
-            root.bind(size=sync_player_layout, pos=sync_player_layout)
-            Window.bind(size=sync_player_layout)
+            def on_close_player(*_):
+                try: v.state='stop'; v.source=''
+                except Exception: pass
+                if state['sound'] is not None:
+                    try: state['sound'].stop(); state['sound'].unload()
+                    except Exception: pass
+                    state['sound']=None
+                if getattr(self,'_play_temp',None)==source:
+                    try:
+                        os.remove(source)
+                        crashlog.write_log('Reproductor: temporal borrado '+os.path.basename(source))
+                    except Exception: pass
+                    self._play_temp=None
+                if state['fs']:
+                    self._jni_fs(False)
+                self._jni_rotation(False)
+                for ev in hide_ev:
+                    if ev:
+                        try: ev.cancel()
+                        except Exception: pass
+                try: tick_ev.cancel()
+                except Exception: pass
+                self._player_dialog=None
+            d=PlayerOverlay(root,sync_player_layout,on_close_player)
+            self._last_dialog=d; self._player_dialog=d
             d.open()
             # Al abrir el reproductor NO se gira el telefono.
-            Clock.schedule_once(sync_player_layout, 0)
-            Clock.schedule_once(sync_player_layout, 0.25)
             crashlog.write_log('Reproductor interno abierto: '+safe_text((item or {}).get('title'),os.path.basename(source)))
             t0=[time.time()]
             hide_ev=[None]
@@ -1600,33 +1688,6 @@ class M(ScreenManager):
             fsb.bind(on_release=toggle_fs)
             cb.bind(on_release=lambda *_: d.dismiss())
             qb.bind(on_release=lambda *_: self.open_queue())
-
-            def _on_dismiss(*_):
-                try: v.state='stop'; v.source=''
-                except Exception: pass
-                if state['sound'] is not None:
-                    try: state['sound'].stop(); state['sound'].unload()
-                    except Exception: pass
-                    state['sound']=None
-                if getattr(self, '_play_temp', None) == source:
-                    try:
-                        os.remove(source)
-                        crashlog.write_log('Reproductor: temporal borrado ' + os.path.basename(source))
-                    except Exception:
-                        pass
-                    self._play_temp = None
-                if state['fs']:
-                    self._jni_fs(False)
-                self._jni_rotation(False)
-                for ev in hide_ev:
-                    if ev:
-                        try: ev.cancel()
-                        except Exception: pass
-                try: tick_ev.cancel()
-                except Exception: pass
-                self._player_dialog=None
-
-            d.bind(on_dismiss=_on_dismiss)
 
             def _tick(_dt):
                 try:
@@ -2236,10 +2297,14 @@ class M(ScreenManager):
             title = safe_text((item or {}).get('title', ''), os.path.basename(path))
             state = {'mode': 'video', 'fs': False, 'drag': False, 'failed': False, 'sound': None,
                      'manual_fs': False, 'land': False}
-            d = ModalView(size_hint=(1, 1), background_color=(0, 0, 0, 0), auto_dismiss=False)
-            root = BoxLayout(orientation='vertical', spacing=dp(2),
-                             padding=(dp(2), dp(self._status_bar_dp()), dp(2), dp(2)))
-            top = BoxLayout(size_hint_y=None, height=dp(52), spacing=dp(6), padding=(dp(4), dp(4)))
+            root = FloatLayout()
+            with root.canvas.before:
+                Color(0, 0, 0, 1)
+                root._bg = Rectangle(pos=root.pos, size=root.size)
+            def _bg_sync(*_):
+                root._bg.pos = root.pos; root._bg.size = root.size
+            root.bind(pos=_bg_sync, size=_bg_sync)
+            top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(6), padding=(dp(4), dp(4)))
             rr(top, (0, 0, 0, 0.55), 0)
             tl = Label(text=title, color=WHITE, font_size=sp(12.5), bold=True,
                        halign='left', valign='middle', size_hint_x=1, text_size=(None, None))
@@ -2249,10 +2314,9 @@ class M(ScreenManager):
             cb = B(text='', size_hint_x=None, width=dp(48)); rr(cb, RED, 10); draw_icon(cb, 'close')
             top.add_widget(fsb); top.add_widget(ab); top.add_widget(cb)
             root.add_widget(top)
-            v = Video(source=path, state='play', volume=1)
-            varea = FloatLayout()
-            varea.add_widget(v)
-            root.add_widget(varea)
+            v = Video(source=path, state='play', volume=1, allow_stretch=True, keep_ratio=True,
+                      size_hint=(1, 1), pos_hint={'x': 0, 'y': 0})
+            root.add_widget(v)
             ascreen = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(24))
             al = Label(text=title, color=WHITE, font_size=sp(15), bold=True,
                        halign='center', valign='middle', text_size=(None, None))
@@ -2262,36 +2326,78 @@ class M(ScreenManager):
             ascreen.add_widget(al)
             ascreen.add_widget(ast)
             ascreen.add_widget(Widget(size_hint_y=1))
-            ascreen.size_hint_y = None
-            ascreen.height = 0
+            ascreen.size_hint = (1, 1)
+            ascreen.pos_hint = {'x': 0, 'y': 0}
             ascreen.opacity = 0
             root.add_widget(ascreen)
-            ctrl = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(8), padding=(dp(8), dp(4)))
+            ctrl = BoxLayout(size_hint=(1, None), height=dp(56), spacing=dp(8), padding=(dp(8), dp(4)))
             rr(ctrl, (0, 0, 0, 0.55), 0)
             pb = B(text='⏸', font_size=sp(14), size_hint_x=None, width=dp(52)); rr(pb, SUR2, 10, BORDER)
             sl = Slider(min=0, max=1, value=0, size_hint_x=1)
             tml = Label(text='0:00 / 0:00', color=MUTED, font_size=sp(9), size_hint_x=None, width=dp(112))
             ctrl.add_widget(pb); ctrl.add_widget(sl); ctrl.add_widget(tml)
             root.add_widget(ctrl)
-            d.add_widget(root)
-            self._last_dialog = d
-            self._player_dialog = d
-            d.size_hint = (None, None)
-            d.size = Window.size
+            self._last_dialog = None
+            self._player_dialog = None
 
             def _relayout(*_):
-                # El ModalView no siempre se redimensiona al girar: se fuerza al
-                # tamano real de la ventana para que las barras/botones no queden
-                # en coordenadas viejas tras el cambio de orientacion.
+                # CLAVE: el ModalView NO se redimensionaba al girar (botones en
+                # coordenadas viejas, video fuera de pantalla al expandir). La capa
+                # se agrega directo a Window y las barras se posicionan DENTRO del
+                # area visible del video (rectangulo 16:9 centrado).
                 try:
-                    d.size = Window.size
-                    root.size = Window.size
+                    root.size = Window.size; root.pos = (0, 0)
+                    sw, sh = float(Window.size[0]), float(Window.size[1])
+                    ar = 16.0 / 9.0
+                    if sw / sh > ar:
+                        vh = sh; vw = sh * ar; vx = (sw - vw) / 2.0; vy = 0.0
+                    else:
+                        vw = sw; vh = sw / ar; vx = 0.0; vy = (sh - vh) / 2.0
+                    v.pos = (0, 0); v.size = root.size
+                    top.pos = (vx, vy + vh - top.height); top.width = vw
+                    ctrl.pos = (vx, vy); ctrl.width = vw
+                    ascreen.size = root.size; ascreen.pos = (0, 0)
+                    land = sh < sw
+                    if land != state['land']:
+                        state['land'] = land
+                        if state['mode'] == 'video' and v.state == 'play':
+                            # Girar con Kivy a veces deja el render del video en
+                            # coordenadas viejas; reiniciar la reproduccion lo
+                            # fuerza a redibujarse al nuevo tamano.
+                            v.state = 'pause'
+                            Clock.schedule_once(lambda dt: setattr(v, 'state', 'play'), 0.25)
                 except Exception:
                     pass
-            root.bind(size=_relayout, pos=_relayout)
-            Window.bind(size=_relayout)
-            Clock.schedule_once(_relayout, 0)
-            Clock.schedule_once(_relayout, 0.30)
+
+            def on_close_player(*_):
+                try:
+                    v.state = 'stop'; v.source = ''
+                except Exception:
+                    pass
+                if state['sound'] is not None:
+                    try:
+                        state['sound'].stop(); state['sound'].unload()
+                    except Exception:
+                        pass
+                    state['sound'] = None
+                if getattr(self, '_play_temp', None) == path:
+                    try:
+                        os.remove(path)
+                        crashlog.write_log('Reproductor: temporal borrado ' + os.path.basename(path))
+                    except Exception:
+                        pass
+                    self._play_temp = None
+                if state['fs']:
+                    self._jni_fs(False)
+                self._jni_rotation(False)
+                try:
+                    tick_ev.cancel()
+                except Exception:
+                    pass
+                self._player_dialog = None
+            d = PlayerOverlay(root, _relayout, on_close_player)
+            self._last_dialog = d
+            self._player_dialog = d
             d.open()
             # El reproductor abre en vertical; solo fullscreen gira a horizontal.
             crashlog.write_log('Reproductor interno abierto: ' + os.path.basename(path))
@@ -2318,10 +2424,8 @@ class M(ScreenManager):
                                 state['sound'].play()
                         except Exception:
                             pass
-                    varea.opacity = 0
+                    v.opacity = 0
                     ascreen.opacity = 1
-                    ascreen.size_hint_y = 1
-                    ascreen.height = 0
                     state['mode'] = 'audio'
                     pb.text = '⏸'
                 else:
@@ -2331,10 +2435,8 @@ class M(ScreenManager):
                         except Exception:
                             pass
                         state['sound'] = None
-                    varea.opacity = 1
+                    v.opacity = 1
                     ascreen.opacity = 0
-                    ascreen.size_hint_y = None
-                    ascreen.height = 0
                     state['mode'] = 'video'
                     if v.state != 'play':
                         v.state = 'play'
@@ -2365,34 +2467,7 @@ class M(ScreenManager):
                 Clock.schedule_once(_relayout, 0.40)
             fsb.bind(on_release=_toggle_fs)
 
-            def _on_dismiss(*_):
-                try:
-                    v.state = 'stop'; v.source = ''
-                except Exception:
-                    pass
-                if state['sound'] is not None:
-                    try:
-                        state['sound'].stop(); state['sound'].unload()
-                    except Exception:
-                        pass
-                    state['sound'] = None
-                if getattr(self, '_play_temp', None) == path:
-                    try:
-                        os.remove(path)
-                        crashlog.write_log('Reproductor: temporal borrado ' + os.path.basename(path))
-                    except Exception:
-                        pass
-                    self._play_temp = None
-                if state['fs']:
-                    self._jni_fs(False)
-                self._jni_rotation(False)
-                try:
-                    tick_ev.cancel()
-                except Exception:
-                    pass
-                self._player_dialog = None
             cb.bind(on_release=lambda *_: d.dismiss())
-            d.bind(on_dismiss=_on_dismiss)
 
             def _tick(_dt):
                 try:
