@@ -1,6 +1,6 @@
 [app]
 title = J Youtube Downloader
-package.name = jonayodownloader
+package.name = jonayodownloader2
 package.domain = org.jonayo
 
 source.dir = .
