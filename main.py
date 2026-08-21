@@ -51,7 +51,7 @@ if IS_ANDROID:
     crashlog.write_log("imports android OK")
 
 # ─── UI MODERNA ─────────────────────────────────────────────────
-from kivy.graphics import Color, RoundedRectangle, Rectangle, Line
+from kivy.graphics import Color, RoundedRectangle, Rectangle, Line, Triangle
 from kivy.uix.floatlayout import FloatLayout
 
 BG      = (0.018, 0.027, 0.037, 1)
@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '1.9.6'
+APP_VERSION = '1.9.7'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -102,10 +102,24 @@ def draw_icon(w, kind, color=WHITE):
         'next': 4, 'prev': 4, 'queue': 5, 'speed': 2, 'quality': 4,
         'dl': 3, 'stop': 4,
     }
-    with w.canvas.after:
-        Color(*color)
-        w._icon_lines = [Line(points=[0, 0, 0, 0], width=dp(2.0))
-                         for _ in range(specs.get(kind, 2))]
+    # 'play' y 'pause' se dibujan como formas RELLENAS (triangulo / barras
+    # redondeadas), no como lineas finas de contorno: a tamano de boton se
+    # veian "sin forma" (dos rayitas sueltas). El resto de iconos sigue
+    # usando Line, que a ese tamano se ve bien.
+    if kind == 'play':
+        with w.canvas.after:
+            Color(*color)
+            w._icon_lines = [Triangle(points=[0, 0, 0, 0, 0, 0])]
+    elif kind == 'pause':
+        with w.canvas.after:
+            Color(*color)
+            w._icon_lines = [RoundedRectangle(pos=(0, 0), size=(1, 1), radius=[dp(1.5)])
+                             for _ in range(2)]
+    else:
+        with w.canvas.after:
+            Color(*color)
+            w._icon_lines = [Line(points=[0, 0, 0, 0], width=dp(2.0))
+                             for _ in range(specs.get(kind, 2))]
 
     def sync(*_):
         x, y, s, h = w.x, w.y, w.width, w.height
@@ -123,11 +137,14 @@ def draw_icon(w, kind, color=WHITE):
                  (br[0]-l,br[1],br[0],br[1]),(br[0],br[1],br[0],br[1]+l)]
             for ln,p in zip(L,pts): ln.points=list(p)
         elif kind == 'play':
-            L[0].points=[x+s*.36,y+h*.25,x+s*.36,y+h*.75]
-            L[1].points=[x+s*.36,y+h*.25,x+s*.72,y+h*.5]
-            L[2].points=[x+s*.72,y+h*.5,x+s*.36,y+h*.75]
+            # Triangulo relleno, apuntando a la derecha (como YouTube).
+            L[0].points=[x+s*.32,y+h*.20, x+s*.32,y+h*.80, x+s*.78,y+h*.5]
         elif kind == 'pause':
-            m=dp(7); L[0].points=[x+m,y+m,x+m,y+h-m]; L[1].points=[x+s-m,y+m,x+s-m,y+h-m]
+            # Dos barras rellenas con esquinas redondeadas.
+            bw=s*.16; gap=s*.14; by=y+h*.20; bh=h*.60
+            cx=x+s*.5
+            L[0].pos=(cx-gap/2-bw, by); L[0].size=(bw, bh)
+            L[1].pos=(cx+gap/2, by); L[1].size=(bw, bh)
         elif kind in ('next','prev'):
             if kind == 'next':
                 L[0].points=[x+s*.28,y+h*.25,x+s*.28,y+h*.75]
@@ -2401,7 +2418,7 @@ class M(ScreenManager):
                     return
             local = item.get('local_path') or ''
             if local and os.path.isfile(local):
-                self._play_internal(local, item)
+                self._play_internal_download(local, item)
                 return
             uri = item.get('public_uri') or ''
             if not uri:
@@ -2423,9 +2440,20 @@ class M(ScreenManager):
             crashlog.write_log('Error reproduciendo: ' + str(e)[:150])
             self._info('No se pudo reproducir', str(e)[:180])
 
-    def _play_internal(self, path, item=None):
+    def _play_internal_download(self, path, item=None):
         """Reproduce un archivo local dentro de la app con pantalla completa,
-        tiempo, barra de progreso y modo audio en segundo plano."""
+        tiempo, barra de progreso y modo audio en segundo plano.
+
+        RENOMBRADO desde `_play_internal`: habia DOS metodos con el mismo
+        nombre `_play_internal` en esta clase (este y el de streams, mas
+        arriba). En Python, cuando dos metodos de una clase comparten
+        nombre, el segundo pisa al primero: TODO el codigo llamaba a
+        `self._play_internal(...)`, pero SIEMPRE se ejecutaba este (el mas
+        simple), nunca el reproductor completo de streams (con boton de
+        calidad, velocidad, siguiente/anterior y cola). Ese reproductor
+        completo quedaba invisible y sin usarse. Con el rename, cada uno
+        se llama por su nombre y ya no se pisan.
+        """
         global Video
         self._player_fallback = False
         if Video is None:
@@ -2440,13 +2468,25 @@ class M(ScreenManager):
             title = safe_text((item or {}).get('title', ''), os.path.basename(path))
             state = {'mode': 'video', 'fs': False, 'drag': False, 'failed': False, 'sound': None,
                      'manual_fs': False, 'land': False}
-            root = FloatLayout()
+            # TouchBlockingFloatLayout (no FloatLayout a secas): sin esto los
+            # toques sobre el video atraviesan la capa y abren el menu del
+            # elemento de la lista que queda detras (el mismo bug ya arreglado
+            # en el reproductor de streams).
+            root = TouchBlockingFloatLayout()
             with root.canvas.before:
                 Color(0, 0, 0, 1)
                 root._bg = Rectangle(pos=root.pos, size=root.size)
             def _bg_sync(*_):
                 root._bg.pos = root.pos; root._bg.size = root.size
             root.bind(pos=_bg_sync, size=_bg_sync)
+            # CLAVE (bug de orden de capas): el Video hay que agregarlo ANTES
+            # que las barras. En Kivy, el widget agregado DESPUES se dibuja
+            # ENCIMA. Antes el video se agregaba despues de `top`, asi que el
+            # video tapaba completamente la barra superior (agrandar/musica/
+            # cerrar quedaban invisibles, aunque el codigo los creaba bien).
+            v = Video(source=path, state='play', volume=1, allow_stretch=True, keep_ratio=True,
+                      size_hint=(1, 1), pos_hint={'x': 0, 'y': 0})
+            root.add_widget(v)
             top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(6), padding=(dp(4), dp(4)))
             rr(top, (0, 0, 0, 0.55), 0)
             tl = Label(text=title, color=WHITE, font_size=sp(12.5), bold=True,
@@ -2457,9 +2497,6 @@ class M(ScreenManager):
             cb = B(text='', size_hint_x=None, width=dp(48)); rr(cb, RED, 10); draw_icon(cb, 'close')
             top.add_widget(fsb); top.add_widget(ab); top.add_widget(cb)
             root.add_widget(top)
-            v = Video(source=path, state='play', volume=1, allow_stretch=True, keep_ratio=True,
-                      size_hint=(1, 1), pos_hint={'x': 0, 'y': 0})
-            root.add_widget(v)
             ascreen = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(24))
             al = Label(text=title, color=WHITE, font_size=sp(15), bold=True,
                        halign='center', valign='middle', text_size=(None, None))
