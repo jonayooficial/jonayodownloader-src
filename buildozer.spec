@@ -6,7 +6,7 @@ package.domain = org.jonayo
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 
-version = 2.0.1
+version = 2.0.2
 version.release = 1
 
 # Requisitos. ffmpeg se compila desde la recipe local (6.1.2) de python-for-android
@@ -23,7 +23,7 @@ requirements = python3==3.12.14,hostpython3==3.12.14,kivy==2.3.1,yt-dlp,ffmpeg,r
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET,REQUEST_INSTALL_PACKAGES
-android.api = 34
+android.api = 33
 # minapi 24 (Android 7.0) OBLIGATORIO: el target NDK de las libs nativas es = minapi,
 # y bionic solo declara getgrent/setgrent/endgrent desde API 24. Con 21, el modulo grp
 # de python3 3.12 (CPython bug gh-114875, arreglado solo en 3.13) falla al compilar.
@@ -40,7 +40,7 @@ android.archs = arm64-v8a,armeabi-v7a
 
 # NDK 28c: soporta tamaños de página de 16 KB de Android 15+ (r25b crasheaba al arrancar)
 android.ndk = 28c
-android.sdk = 34
+android.sdk = 33
 
 presplash.filename = presplash.png
 icon.filename = icon.png
