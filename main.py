@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.0'
+APP_VERSION = '2.0.1'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -751,6 +751,10 @@ class MusicRow(ClickableBox):
         super().__init__(bg=SUR, radius=14, border=BORDER, orientation='horizontal',
                          spacing=dp(8), padding=(dp(12), dp(6)),
                          size_hint_y=None, height=dp(64), **kw)
+        num = BoxLayout(size_hint_x=None, width=dp(28), padding=(0, 0))
+        num.add_widget(Label(text=str(item.get('idx', '') or ''), color=MUTED,
+                             font_size=sp(10), halign='center', valign='middle'))
+        self.add_widget(num)
         col = BoxLayout(orientation='vertical', spacing=dp(1), size_hint_x=1)
         title = Label(text=safe_text(item.get('title', ''), 'Sin titulo'), color=WHITE,
                       font_size=sp(10.3), bold=True, halign='left', valign='middle',
@@ -764,12 +768,12 @@ class MusicRow(ClickableBox):
                              size_hint_y=None, height=dp(17), text_size=(None, None),
                              shorten=True, shorten_from='right'))
         self.add_widget(col)
-        self.play_btn = B(text='', size_hint=(None, None), size=(dp(44), dp(44)))
+        self.play_btn = B(text='', size_hint=(None, None), size=(dp(40), dp(40)))
         rr(self.play_btn, SUR2, 12, BORDER)
         draw_icon(self.play_btn, 'play')
         self.add_widget(self.play_btn)
-        dl = B(text='', size_hint=(None, None), size=(dp(44), dp(44)))
-        rr(dl, RED, 12)
+        dl = B(text='', size_hint=(None, None), size=(dp(40), dp(40)))
+        rr(dl, RED, 20)
         draw_icon(dl, 'dl')
         self.add_widget(dl)
         dl.bind(on_release=lambda *_: self.manager.music_download(self.item))
@@ -787,25 +791,69 @@ class Music(Base):
         body = BoxLayout(orientation='vertical', padding=(dp(14), dp(10)), spacing=dp(9), size_hint_y=None)
         body.bind(minimum_height=body.setter('height')); self.body = body; self.content.add_widget(body)
         self._preview = None
+        self._mp_visible = False
         self.build(); self.add_widget(self.make())
+        self._build_mini_player()
 
     def build(self):
         c = self.body
         h = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(6))
-        b = B(text='‹', font_size=sp(30), size_hint_x=None, width=dp(38))
+        b = B(text='<', font_size=sp(30), size_hint_x=None, width=dp(38))
         b.bind(on_release=lambda *_: self.manager.go('home'))
         h.add_widget(b)
-        h.add_widget(Label(text='Música', color=WHITE, font_size=sp(16), bold=True, halign='left'))
+        h.add_widget(Label(text='Musica', color=WHITE, font_size=sp(16), bold=True, halign='left'))
         c.add_widget(h)
         q = TextBox(hint_text='Buscar canciones...', size_hint_y=None, height=dp(48))
         q.bind(on_text_validate=lambda *_: self.manager.music_search(q.text))
         self.query_field = q
         c.add_widget(q)
         hint = Card(size_hint_y=None, height=dp(40))
-        hint.add_widget(Label(text='▶ escuchar · ▼ descargar solo audio', color=DIM, font_size=sp(9), halign='center'))
+        hint.add_widget(Label(text='Toca play para escuchar, flecha para descargar', color=DIM, font_size=sp(9), halign='center'))
         c.add_widget(hint)
         box = BoxLayout(orientation='vertical', spacing=dp(8), size_hint_y=None)
         box.bind(minimum_height=box.setter('height')); self.results_box = box; c.add_widget(box)
+
+    def _build_mini_player(self):
+        self._mp = mp = BoxLayout(orientation='vertical', size_hint=(1, None), height=dp(64),
+                                  pos_hint={'bottom': 1}, opacity=0)
+        rr(mp, (0, 0, 0, 0.92), 0)
+        top_row = BoxLayout(size_hint_y=None, height=dp(32), padding=(dp(8), 0), spacing=dp(6))
+        self._mp_title = Label(text='', color=WHITE, font_size=sp(10), bold=True,
+                               halign='left', valign='middle', size_hint_x=1, shorten=True)
+        top_row.add_widget(self._mp_title)
+        close_b = B(text='X', font_size=sp(12), size_hint_x=None, width=dp(32), color=MUTED)
+        close_b.bind(on_release=lambda *_: self.manager.music_stop())
+        top_row.add_widget(close_b)
+        mp.add_widget(top_row)
+        bot_row = BoxLayout(size_hint_y=None, height=dp(32), padding=(dp(8), 0), spacing=dp(8))
+        self._mp_prev = B(text='', size_hint_x=None, width=dp(34))
+        rr(self._mp_prev, SUR2, 9, BORDER); draw_icon(self._mp_prev, 'prev')
+        self._mp_prev.bind(on_release=lambda *_: self.manager.music_prev())
+        bot_row.add_widget(self._mp_prev)
+        self._mp_play = B(text='', size_hint_x=None, width=dp(38))
+        rr(self._mp_play, RED, 10); draw_icon(self._mp_play, 'pause')
+        self._mp_play.bind(on_release=lambda *_: self.manager.music_toggle())
+        bot_row.add_widget(self._mp_play)
+        self._mp_next = B(text='', size_hint_x=None, width=dp(34))
+        rr(self._mp_next, SUR2, 9, BORDER); draw_icon(self._mp_next, 'next')
+        self._mp_next.bind(on_release=lambda *_: self.manager.music_next())
+        bot_row.add_widget(self._mp_next)
+        self._mp_slider = Slider(min=0, max=1, value=0, size_hint_x=1)
+        bot_row.add_widget(self._mp_slider)
+        mp.add_widget(bot_row)
+        self.add_widget(mp)
+
+    def show_mini_player(self, title, playing=True):
+        self._mp_title.text = title
+        self._mp_play.canvas.after.clear()
+        draw_icon(self._mp_play, 'pause' if playing else 'play')
+        if not self._mp_visible:
+            self._mp.opacity = 1
+            self._mp_visible = True
+
+    def hide_mini_player(self):
+        self._mp.opacity = 0
+        self._mp_visible = False
 
     def set_query(self, q):
         self.query_field.text = q
@@ -819,10 +867,11 @@ class Music(Base):
         if not items:
             self.results_box.add_widget(Label(text='Sin resultados', color=DIM, size_hint_y=None, height=dp(50)))
             return
-        for it in items:
+        for idx, it in enumerate(items):
+            it['idx'] = idx + 1
             row = MusicRow(it)
             row.manager = self.manager
-            row.bind_play(self.manager.music_preview)
+            row.bind_play(self.manager.music_queue_add)
             self.results_box.add_widget(row)
 
     def show_error(self, msg):
@@ -861,7 +910,6 @@ class Music(Base):
             crashlog.write_log('Error preview musica: ' + str(e)[:120])
 
     def on_pre_enter(self):
-        self.stop_preview()
         if not self.query_field.text.strip():
             self.show_local_audios()
 
@@ -873,23 +921,23 @@ class Music(Base):
             self.results_box.add_widget(Label(text='No hay descargas de audio.\nBusca y descarga canciones arriba.', color=DIM, size_hint_y=None, height=dp(70)))
             return
         self.results_box.add_widget(Label(text='Tus canciones descargadas', color=MUTED, font_size=sp(10), size_hint_y=None, height=dp(24), halign='left'))
-        for item in audios:
-            title = safe_text(item.get('title', 'Sin título'), 'Sin título')
+        for idx, item in enumerate(audios):
+            title = safe_text(item.get('title', 'Sin titulo'), 'Sin titulo')
             dur = item.get('duration') or ''
             dur_s = ''
             if dur:
                 try:
                     dur_s = f'{int(dur)//60}:{int(dur)%60:02d}'
                 except Exception:
-                    pass
+                    dur_s = str(dur)
             row = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(8), padding=(dp(6), dp(4)))
             rr(row, SUR, 12, BORDER)
             play_b = B(text='', size_hint_x=None, width=dp(38))
             rr(play_b, SUR2, 10, BORDER)
             draw_icon(play_b, 'play')
-            play_b.bind(on_release=lambda *_i, it=item: mgr.play_download(it))
+            play_b.bind(on_release=lambda *_i, it=item: mgr.music_queue_add(it))
             info = BoxLayout(orientation='vertical', spacing=dp(1))
-            info.add_widget(Label(text=title, color=WHITE, font_size=sp(10.5), bold=True, halign='left', valign='middle', text_size=(None, None)))
+            info.add_widget(Label(text=f'{idx+1}. {title}', color=WHITE, font_size=sp(10.5), bold=True, halign='left', valign='middle', text_size=(None, None)))
             info.add_widget(Label(text=dur_s, color=MUTED, font_size=sp(8.5), halign='left', valign='middle', text_size=(None, None)))
             row.add_widget(play_b)
             row.add_widget(info)
@@ -1010,6 +1058,11 @@ class M(ScreenManager):
         self._search_cache = {}
         self._queue_dialog = None
         self._player_dialog = None
+        self._music_queue = []
+        self._music_idx = -1
+        self._music_sound = None
+        self._music_playing = False
+        self._music_tick = None
 
         self.add_widget(Home(name='home'))
 
@@ -2744,7 +2797,153 @@ class M(ScreenManager):
             self.paused = False
             self.cancel_event.clear()
             self.get_screen('downloading').pause_btn.text = '\u2160  Pausar'
-            self._launch_download_thread()
+        self._launch_download_thread()
+
+    def music_queue_add(self, item, row=None):
+        """Agrega una cancion a la cola y la reproduce."""
+        self._music_queue.append(dict(item))
+        idx = len(self._music_queue) - 1
+        if self._music_sound is None or not self._music_playing:
+            self._music_play_idx(idx)
+        else:
+            screen = self.get_screen('music')
+            screen.show_mini_player(item.get('title', ''), playing=True)
+
+    def _music_resolve_url(self, item, on_done):
+        """Resuelve la URL de streaming de un item yt-dlp (en background)."""
+        url = item.get('url') or ''
+        if not url:
+            on_done('')
+            return
+        def _run():
+            import yt_dlp
+            try:
+                ydl_opts = {'format': 'bestaudio/best', 'quiet': True, 'no_warnings': True,
+                            'nocheckcertificate': True, 'socket_timeout': 15}
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                src = (info or {}).get('url') or ''
+                Clock.schedule_once(lambda dt: on_done(src))
+            except Exception as e:
+                crashlog.write_log('Error resolviendo audio: ' + str(e)[:120])
+                Clock.schedule_once(lambda dt: on_done(''))
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _music_play_idx(self, idx):
+        """Reproduce la cancion en la cola[idx]."""
+        if idx < 0 or idx >= len(self._music_queue):
+            return
+        self._music_stop_internal()
+        self._music_idx = idx
+        item = self._music_queue[idx]
+        title = item.get('title', 'Sin titulo')
+        screen = self.get_screen('music')
+        screen.show_mini_player(title, playing=False)
+
+        def _on_src(src):
+            if not src:
+                crashlog.write_log('No se pudo resolver URL de audio')
+                return
+            try:
+                from kivy.core.audio import SoundLoader
+                snd = SoundLoader.load(src)
+                if snd is None:
+                    crashlog.write_log('SoundLoader devolvió None')
+                    return
+                self._music_sound = snd
+                self._music_playing = True
+                snd.bind(on_stop=self._music_on_stop)
+                snd.play()
+                screen.show_mini_player(title, playing=True)
+                self._music_start_tick()
+            except Exception as e:
+                crashlog.write_log('Error reproduciendo audio: ' + str(e)[:120])
+
+        self._music_resolve_url(item, _on_src)
+
+    def _music_start_tick(self):
+        if self._music_tick:
+            try:
+                self._music_tick.cancel()
+            except Exception:
+                pass
+        def _tick(_dt):
+            screen = self.get_screen('music')
+            snd = self._music_sound
+            if snd is None:
+                return
+            try:
+                pos = snd.get_pos()
+                dur = snd.length if hasattr(snd, 'length') and snd.length else 0
+                if dur > 0 and screen._mp_slider:
+                    screen._mp_slider.max = dur
+                    if not screen._mp_slider._focus:
+                        screen._mp_slider.value = pos
+            except Exception:
+                pass
+        self._music_tick = Clock.schedule_interval(_tick, 0.5)
+
+    def _music_on_stop(self, *args):
+        """Callback cuando la cancion termina: avanza a la siguiente."""
+        if not self._music_playing:
+            return
+        self._music_playing = False
+        if self._music_idx < len(self._music_queue) - 1:
+            Clock.schedule_once(lambda dt: self._music_play_idx(self._music_idx + 1), 0.3)
+        else:
+            screen = self.get_screen('music')
+            screen.show_mini_player('Cola finalizada', playing=False)
+            if self._music_tick:
+                try:
+                    self._music_tick.cancel()
+                except Exception:
+                    pass
+                self._music_tick = None
+
+    def music_toggle(self):
+        snd = self._music_sound
+        if snd is None:
+            return
+        if self._music_playing:
+            snd.stop()
+            self._music_playing = False
+            screen = self.get_screen('music')
+            screen.show_mini_player(self._music_queue[self._music_idx].get('title', ''), playing=False)
+        else:
+            snd.play()
+            self._music_playing = True
+            screen = self.get_screen('music')
+            screen.show_mini_player(self._music_queue[self._music_idx].get('title', ''), playing=True)
+            self._music_start_tick()
+
+    def music_next(self):
+        if self._music_idx < len(self._music_queue) - 1:
+            self._music_play_idx(self._music_idx + 1)
+
+    def music_prev(self):
+        if self._music_idx > 0:
+            self._music_play_idx(self._music_idx - 1)
+
+    def music_stop(self):
+        self._music_stop_internal()
+        screen = self.get_screen('music')
+        screen.hide_mini_player()
+
+    def _music_stop_internal(self):
+        if self._music_tick:
+            try:
+                self._music_tick.cancel()
+            except Exception:
+                pass
+            self._music_tick = None
+        if self._music_sound:
+            try:
+                self._music_sound.stop()
+                self._music_sound.unload()
+            except Exception:
+                pass
+            self._music_sound = None
+        self._music_playing = False
 
     def cancel_download(self):
         if not self.downloading:
