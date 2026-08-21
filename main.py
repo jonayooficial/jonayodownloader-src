@@ -1733,9 +1733,11 @@ class M(ScreenManager):
             crashlog.write_log('Reproductor interno abierto: '+safe_text((item or {}).get('title'),os.path.basename(source)))
             t0=[time.time()]
             hide_ev=[None]
+            last_touch=[time.time()]
 
             def show_controls(*_):
                 state['hidden']=False; top.opacity=1; bottom.opacity=1; thin.opacity=1
+                last_touch[0]=time.time()
                 if hide_ev[0]: 
                     try: hide_ev[0].cancel()
                     except Exception: pass
@@ -1837,7 +1839,7 @@ class M(ScreenManager):
                         fm=lambda x:f"{int(x//60)}:{int(x%60):02d}"
                         tml.text=f"{fm(pos)} / {fm(dur)}"; thin.value=min(1,max(0,pos/dur))
                     qlabel.text=safe_text(item.get('stream_quality','HD') if item else 'HD','HD')
-                    if state['mode']=='video' and v.state=='play' and not state['hidden'] and (time.time()-t0[0])>3:
+                    if state['mode']=='video' and v.state=='play' and not state['hidden'] and (time.time()-last_touch[0])>3:
                         hide_controls()
                     if dur and pos >= dur-0.7 and not state['ended']:
                         state['ended']=True
