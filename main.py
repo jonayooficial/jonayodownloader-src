@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.2'
+APP_VERSION = '2.0.3'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -1264,6 +1264,13 @@ class M(ScreenManager):
             pass
         return url
 
+    def _thumb_url_from_id(self, vid):
+        """Construye URL de thumbnail directamente desde el ID del video.
+        YouTube siempre soporta este patrón sin importar extract_flat."""
+        if not vid:
+            return ''
+        return f'https://i.ytimg.com/vi/{vid}/mqdefault.jpg'
+
     def _thumb_cache_path(self):
         return os.path.join(self._data_dir(), '.thumbs')
 
@@ -1308,7 +1315,7 @@ class M(ScreenManager):
             'id': vid,
             'title': e.get('title', 'Sin titulo'),
             'url': page_url,
-            'thumb': self._thumb_path(self._fast_thumb(e.get('thumbnail') or '')),
+            'thumb': self._thumb_path(self._fast_thumb(e.get('thumbnail') or '') or self._thumb_url_from_id(vid)),
             'duration': dur_txt,
             'channel': e.get('uploader', ''),
             'views': self._fmt_views(e.get('view_count')),
