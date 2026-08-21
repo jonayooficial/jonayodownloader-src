@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.3'
+APP_VERSION = '2.0.4'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -102,10 +102,15 @@ def draw_icon(w, kind, color=WHITE):
         'next': 4, 'prev': 4, 'queue': 5, 'speed': 2, 'quality': 4,
         'dl': 3, 'stop': 4,
     }
-    # 'play' y 'pause' se dibujan como formas RELLENAS (triangulo / barras
-    # redondeadas), no como lineas finas de contorno: a tamano de boton se
-    # veian "sin forma" (dos rayitas sueltas). El resto de iconos sigue
-    # usando Line, que a ese tamano se ve bien.
+    if hasattr(w, '_icon_sync'):
+        try:
+            w.unbind(pos=w._icon_sync, size=w._icon_sync)
+        except Exception:
+            pass
+    try:
+        w.canvas.after.clear()
+    except Exception:
+        pass
     if kind == 'play':
         with w.canvas.after:
             Color(*color)
@@ -137,10 +142,8 @@ def draw_icon(w, kind, color=WHITE):
                  (br[0]-l,br[1],br[0],br[1]),(br[0],br[1],br[0],br[1]+l)]
             for ln,p in zip(L,pts): ln.points=list(p)
         elif kind == 'play':
-            # Triangulo relleno, apuntando a la derecha (como YouTube).
             L[0].points=[x+s*.32,y+h*.20, x+s*.32,y+h*.80, x+s*.78,y+h*.5]
         elif kind == 'pause':
-            # Dos barras rellenas con esquinas redondeadas.
             bw=s*.16; gap=s*.14; by=y+h*.20; bh=h*.60
             cx=x+s*.5
             L[0].pos=(cx-gap/2-bw, by); L[0].size=(bw, bh)
@@ -162,7 +165,6 @@ def draw_icon(w, kind, color=WHITE):
             L[3].points=[x+s*.22,y+h*.30,x+s*.22,y+h*.70]
             L[4].points=[x+s*.78,y+h*.30,x+s*.78,y+h*.70]
         elif kind == 'speed':
-            # reloj/velocidad: círculo aproximado + aguja
             pts=[]
             r=min(s,h)*.30; cx=x+s*.5; cy=y+h*.5
             for i in range(24):
@@ -171,7 +173,6 @@ def draw_icon(w, kind, color=WHITE):
             L[0].points=pts
             L[1].points=[cx,cy,cx+r*.65,cy+r*.45]
         elif kind == 'quality':
-            # tres líneas que representan niveles de calidad
             for i,ln in enumerate(L):
                 yy=y+h*(.28+i*.22); x2=x+s*(.45+i*.12)
                 ln.points=[x+s*.22,yy,x2,yy]
@@ -182,18 +183,17 @@ def draw_icon(w, kind, color=WHITE):
                 a=2*math.pi*i/20; pts += [cx+r*math.cos(a),cy+r*math.sin(a)]
             L[0].points=pts; L[1].points=[cx,cy-r,cx,y+h*.28]; L[2].points=[cx,y+h*.28,x+s*.55,y+h*.22]
         elif kind == 'dl':
-            # flecha hacia abajo (descargar)
             cx=x+s*.5
             L[0].points=[cx,y+h*.16,cx,y+h*.72]
             L[1].points=[cx,y+h*.72,x+s*.32,y+h*.40]
             L[2].points=[cx,y+h*.72,x+s*.68,y+h*.40]
         elif kind == 'stop':
-            # cuadrado (detener)
             m=dp(7)
             L[0].points=[x+m,y+m,x+s-m,y+m]
             L[1].points=[x+s-m,y+m,x+s-m,y+h-m]
             L[2].points=[x+s-m,y+h-m,x+m,y+h-m]
             L[3].points=[x+m,y+h-m,x+m,y+m]
+    w._icon_sync = sync
     w.bind(pos=sync, size=sync)
     sync()
     return w
@@ -3167,34 +3167,48 @@ class M(ScreenManager):
         except Exception:
             pass
         if not IS_ANDROID:
-            webbrowser.open('file:///' + apk_path)
-            return
-        uri = None
-        try:
-            res = self._publish_to_downloads(apk_path, os.path.basename(apk_path))
-            if res:
-                uri = res.get('uri')
-        except Exception as e:
-            crashlog.write_log('Error publicando APK: ' + str(e)[:160])
-        if not uri:
-            self._info('Instala el APK',
-                       'No se pudo preparar la instalacion automatica.\n'
-                       'Descargalo manual desde:\nhttps://github.com/Jonayo/jonayodownloader-apk/releases')
+            self._info('Instala el APK', 'Abri el archivo para instalar:\n' + apk_path)
             return
         try:
             from jnius import autoclass
             Intent = autoclass('android.content.Intent')
             Uri = autoclass('android.net.Uri')
+            File = autoclass('java.io.File')
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            context = PythonActivity.mActivity.getApplicationContext()
+            pkg = context.getPackageName()
+            cache_dir = context.getCacheDir()
+            update_file = File(cache_dir, 'jonayodownloader-update.apk')
+            import shutil
+            shutil.copy2(apk_path, update_file.getAbsolutePath())
+            FileProvider = autoclass('androidx.core.content.FileProvider')
+            uri = FileProvider.getUriForFile(context, pkg + '.fileprovider', update_file)
             intent = Intent(Intent.ACTION_VIEW)
-            intent.setDataAndType(Uri.parse(uri),
-                                  'application/vnd.android.package-archive')
+            intent.setDataAndType(uri, 'application/vnd.android.package-archive')
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
                             Intent.FLAG_ACTIVITY_NEW_TASK)
             PythonActivity.mActivity.startActivity(intent)
         except Exception as e:
-            crashlog.write_log('Error abriendo instalador: ' + str(e)[:160])
-            self._info('Instala el APK', 'Abri el APK manualmente:\n' + apk_path)
+            crashlog.write_log('Error instalador: ' + str(e)[:200])
+            try:
+                from jnius import autoclass
+                Intent = autoclass('android.content.Intent')
+                Uri = autoclass('android.net.Uri')
+                File = autoclass('java.io.File')
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                context = PythonActivity.mActivity.getApplicationContext()
+                cache_dir = context.getCacheDir()
+                update_file = File(cache_dir, 'jonayodownloader-update.apk')
+                import shutil
+                shutil.copy2(apk_path, update_file.getAbsolutePath())
+                uri = Uri.fromFile(update_file)
+                intent = Intent(Intent.ACTION_VIEW)
+                intent.setDataAndType(uri, 'application/vnd.android.package-archive')
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                PythonActivity.mActivity.startActivity(intent)
+            except Exception as e2:
+                crashlog.write_log('Error instalador fallback: ' + str(e2)[:200])
+                self._info('Instala el APK', 'Descargalo manual desde:\nhttps://github.com/jonayooficial/jonayodownloader-apk/releases')
 
     def show_video_menu(self, video):
         def copy_link():
