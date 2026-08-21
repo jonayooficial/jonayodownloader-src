@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.4'
+APP_VERSION = '2.0.5'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -204,6 +204,9 @@ class B(Button):
         super().__init__(**kw)
         self.background_normal = ''
         self.background_down = ''
+        if not kw.get('text', ''):
+            self.font_size = 0
+            self.color = (0, 0, 0, 0)
         self.background_color = (0, 0, 0, 0)
         self.color = kw.get('color', WHITE)
         self.font_size = kw.get('font_size', sp(13))
@@ -780,7 +783,6 @@ class MusicRow(ClickableBox):
     def bind_play(self, cb):
         self.play_btn.bind(on_release=lambda *_: cb(self.item, self))
     def set_playing(self, playing):
-        self.play_btn.canvas.after.clear()
         draw_icon(self.play_btn, 'stop' if playing else 'play')
 
 
@@ -845,7 +847,6 @@ class Music(Base):
 
     def show_mini_player(self, title, playing=True):
         self._mp_title.text = title
-        self._mp_play.canvas.after.clear()
         draw_icon(self._mp_play, 'pause' if playing else 'play')
         if not self._mp_visible:
             self._mp.opacity = 1
@@ -1294,10 +1295,18 @@ class M(ScreenManager):
 
     def _thumb_download(self, url, local):
         try:
-            import urllib.request
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=8) as r:
-                data = r.read()
+            try:
+                import certifi
+                import ssl
+                ctx = ssl.create_default_context(cafile=certifi.where())
+                import urllib.request
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=8, context=ctx) as r:
+                    data = r.read()
+            except Exception:
+                import requests as _req
+                r = _req.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=8, verify=True)
+                data = r.content
             if data and len(data) > 500:
                 with open(local, 'wb') as f:
                     f.write(data)
@@ -1860,7 +1869,7 @@ class M(ScreenManager):
                         except Exception as e:
                             self._info('Audio','No se pudo activar el modo audio.'); crashlog.write_log('Audio fallo: '+str(e)[:120])
                     v.opacity=0; state['mode']='audio'
-                    ab.canvas.after.clear(); draw_icon(ab,'play')
+                    draw_icon(ab,'play')
                 else:
                     if state['sound'] is not None:
                         try: state['sound'].stop(); state['sound'].unload()
@@ -2120,7 +2129,6 @@ class M(ScreenManager):
             self._info('Descarga en curso', 'Espera a que termine la descarga actual.')
             return
         self.selected = dict(item)
-        self.selected['thumb'] = ''
         self.current_mode = 'audio'
         self.current_quality = '192'
         self.cancel_event.clear()
@@ -2705,7 +2713,7 @@ class M(ScreenManager):
                     v.opacity = 0
                     ascreen.opacity = 1
                     state['mode'] = 'audio'
-                    pb.canvas.after.clear(); draw_icon(pb, 'pause')
+                    draw_icon(pb, 'pause')
                 else:
                     if state['sound'] is not None:
                         try:
@@ -2718,7 +2726,7 @@ class M(ScreenManager):
                     state['mode'] = 'video'
                     if v.state != 'play':
                         v.state = 'play'
-                    pb.canvas.after.clear(); draw_icon(pb, 'pause')
+                    draw_icon(pb, 'pause')
             ab.bind(on_release=lambda *_: _set_mode('audio' if state['mode'] != 'audio' else 'video'))
 
             def _toggle_play(*_):
@@ -2726,14 +2734,14 @@ class M(ScreenManager):
                     s = state['sound']
                     if s is not None:
                         if getattr(s, 'state', '') == 'playing':
-                            s.stop(); pb.canvas.after.clear(); draw_icon(pb, 'play')
+                            s.stop(); draw_icon(pb, 'play')
                         else:
-                            s.play(); pb.canvas.after.clear(); draw_icon(pb, 'pause')
+                            s.play(); draw_icon(pb, 'pause')
                 else:
                     if v.state == 'play':
-                        v.state = 'pause'; pb.canvas.after.clear(); draw_icon(pb, 'play')
+                        v.state = 'pause'; draw_icon(pb, 'play')
                     else:
-                        v.state = 'play'; pb.canvas.after.clear(); draw_icon(pb, 'pause')
+                        v.state = 'play'; draw_icon(pb, 'pause')
             pb.bind(on_release=_toggle_play)
 
             def _toggle_fs(*_):
