@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '1.9.7'
+APP_VERSION = '1.9.8'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -1638,36 +1638,36 @@ class M(ScreenManager):
             touch_layer.background_color=(0,0,0,0)
             root.add_widget(touch_layer)
 
-            top=BoxLayout(size_hint=(1,None),height=dp(52),spacing=dp(4),
-                          padding=(dp(8),dp(6)))
-            rr(top,(0,0,0,0.58),0)
-            tl=Label(text=title,color=WHITE,font_size=sp(12),bold=True,halign='left',valign='middle',
+            top=BoxLayout(size_hint=(1,None),height=dp(36),spacing=dp(4),
+                          padding=(dp(6),dp(3)))
+            rr(top,(0,0,0,0.45),0)
+            tl=Label(text=title,color=WHITE,font_size=sp(10),bold=True,halign='left',valign='middle',
                      shorten=True,shorten_from='right',text_size=(None,None))
             top.add_widget(tl)
-            qlabel=B(text='HD',size_hint_x=None,width=dp(42),font_size=sp(9))
+            qlabel=B(text='HD',size_hint_x=None,width=dp(32),font_size=sp(8))
             rr(qlabel,SUR2,9,BORDER); draw_icon(qlabel,'quality')
-            speed=B(text='',size_hint_x=None,width=dp(42)); rr(speed,SUR2,9,BORDER); draw_icon(speed,'speed')
-            fsb=B(text='',size_hint_x=None,width=dp(52)); rr(fsb,SUR2,9,BORDER); draw_icon(fsb,'fs')
-            cb=B(text='',size_hint_x=None,width=dp(52)); rr(cb,RED,9); draw_icon(cb,'close')
+            speed=B(text='',size_hint_x=None,width=dp(32)); rr(speed,SUR2,9,BORDER); draw_icon(speed,'speed')
+            fsb=B(text='',size_hint_x=None,width=dp(32)); rr(fsb,SUR2,9,BORDER); draw_icon(fsb,'fs')
+            cb=B(text='',size_hint_x=None,width=dp(32)); rr(cb,RED,9); draw_icon(cb,'close')
             top.add_widget(qlabel); top.add_widget(speed); top.add_widget(fsb); top.add_widget(cb)
             root.add_widget(top)
 
-            bottom=BoxLayout(size_hint=(1,None),height=dp(68),spacing=dp(5),
-                             padding=(dp(8),dp(5)))
-            rr(bottom,(0,0,0,0.62),0)
-            pb=B(text='',size_hint_x=None,width=dp(44)); rr(pb,SUR2,9,BORDER); draw_icon(pb,'pause')
-            prev=B(text='',size_hint_x=None,width=dp(38)); rr(prev,SUR2,9,BORDER); draw_icon(prev,'prev')
-            nxt=B(text='',size_hint_x=None,width=dp(38)); rr(nxt,SUR2,9,BORDER); draw_icon(nxt,'next')
+            bottom=BoxLayout(size_hint=(1,None),height=dp(44),spacing=dp(4),
+                             padding=(dp(6),dp(3)))
+            rr(bottom,(0,0,0,0.45),0)
+            pb=B(text='',size_hint_x=None,width=dp(34)); rr(pb,SUR2,9,BORDER); draw_icon(pb,'pause')
+            prev=B(text='',size_hint_x=None,width=dp(30)); rr(prev,SUR2,9,BORDER); draw_icon(prev,'prev')
+            nxt=B(text='',size_hint_x=None,width=dp(30)); rr(nxt,SUR2,9,BORDER); draw_icon(nxt,'next')
             sl=Slider(min=0,max=1,value=0,size_hint_x=1)
-            tml=Label(text='0:00 / 0:00',color=WHITE,font_size=sp(8.5),size_hint_x=None,width=dp(86))
-            ab=B(text='',size_hint_x=None,width=dp(38)); rr(ab,SUR2,9,BORDER); draw_icon(ab,'music')
-            qb=B(text='',size_hint_x=None,width=dp(38)); rr(qb,SUR2,9,BORDER); draw_icon(qb,'queue')
+            tml=Label(text='0:00 / 0:00',color=WHITE,font_size=sp(8),size_hint_x=None,width=dp(72))
+            ab=B(text='',size_hint_x=None,width=dp(30)); rr(ab,SUR2,9,BORDER); draw_icon(ab,'music')
+            qb=B(text='',size_hint_x=None,width=dp(30)); rr(qb,SUR2,9,BORDER); draw_icon(qb,'queue')
             bottom.add_widget(pb); bottom.add_widget(prev); bottom.add_widget(nxt); bottom.add_widget(sl)
             bottom.add_widget(tml); bottom.add_widget(ab); bottom.add_widget(qb)
             root.add_widget(bottom)
 
             # Barra fina superior tipo YouTube.
-            thin=ProgressBar(max=1,value=0,size_hint=(1,None),height=dp(3))
+            thin=ProgressBar(max=1,value=0,size_hint=(1,None),height=dp(2))
             root.add_widget(thin)
 
             def sync_player_layout(*_):
@@ -2487,14 +2487,14 @@ class M(ScreenManager):
             v = Video(source=path, state='play', volume=1, allow_stretch=True, keep_ratio=True,
                       size_hint=(1, 1), pos_hint={'x': 0, 'y': 0})
             root.add_widget(v)
-            top = BoxLayout(size_hint=(1, None), height=dp(52), spacing=dp(6), padding=(dp(4), dp(4)))
-            rr(top, (0, 0, 0, 0.55), 0)
-            tl = Label(text=title, color=WHITE, font_size=sp(12.5), bold=True,
+            top = BoxLayout(size_hint=(1, None), height=dp(36), spacing=dp(4), padding=(dp(4), dp(3)))
+            rr(top, (0, 0, 0, 0.45), 0)
+            tl = Label(text=title, color=WHITE, font_size=sp(10), bold=True,
                        halign='left', valign='middle', size_hint_x=1, text_size=(None, None))
             top.add_widget(tl)
-            fsb = B(text='', size_hint_x=None, width=dp(48)); rr(fsb, SUR2, 10, BORDER); draw_icon(fsb, 'fs')
-            ab = B(text='', size_hint_x=None, width=dp(48)); rr(ab, SUR2, 10, BORDER); draw_icon(ab, 'music')
-            cb = B(text='', size_hint_x=None, width=dp(48)); rr(cb, RED, 10); draw_icon(cb, 'close')
+            fsb = B(text='', size_hint_x=None, width=dp(32)); rr(fsb, SUR2, 9, BORDER); draw_icon(fsb, 'fs')
+            ab = B(text='', size_hint_x=None, width=dp(32)); rr(ab, SUR2, 9, BORDER); draw_icon(ab, 'music')
+            cb = B(text='', size_hint_x=None, width=dp(32)); rr(cb, RED, 9); draw_icon(cb, 'close')
             top.add_widget(fsb); top.add_widget(ab); top.add_widget(cb)
             root.add_widget(top)
             ascreen = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(24))
@@ -2510,11 +2510,11 @@ class M(ScreenManager):
             ascreen.pos_hint = {'x': 0, 'y': 0}
             ascreen.opacity = 0
             root.add_widget(ascreen)
-            ctrl = BoxLayout(size_hint=(1, None), height=dp(56), spacing=dp(8), padding=(dp(8), dp(4)))
-            rr(ctrl, (0, 0, 0, 0.55), 0)
-            pb = B(text='', size_hint_x=None, width=dp(52)); rr(pb, SUR2, 10, BORDER); draw_icon(pb, 'pause')
+            ctrl = BoxLayout(size_hint=(1, None), height=dp(40), spacing=dp(4), padding=(dp(6), dp(3)))
+            rr(ctrl, (0, 0, 0, 0.45), 0)
+            pb = B(text='', size_hint_x=None, width=dp(34)); rr(pb, SUR2, 9, BORDER); draw_icon(pb, 'pause')
             sl = Slider(min=0, max=1, value=0, size_hint_x=1)
-            tml = Label(text='0:00 / 0:00', color=MUTED, font_size=sp(9), size_hint_x=None, width=dp(112))
+            tml = Label(text='0:00 / 0:00', color=MUTED, font_size=sp(8), size_hint_x=None, width=dp(72))
             ctrl.add_widget(pb); ctrl.add_widget(sl); ctrl.add_widget(tml)
             root.add_widget(ctrl)
             self._last_dialog = None
