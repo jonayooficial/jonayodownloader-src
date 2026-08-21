@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '1.9.8'
+APP_VERSION = '2.0.0'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -503,7 +503,7 @@ class Nav(BoxLayout):
         super().__init__(orientation='horizontal', size_hint_y=None, height=dp(78),
                          padding=(dp(8), dp(6)), spacing=dp(6), **kw)
         rr(self, NAV, 0)
-        for img, text, name in [('home','Inicio','home'), ('download','Descargas','downloads'), ('settings','Ajustes','settings')]:
+        for img, text, name in [('home','Inicio','home'), ('download','Descargas','downloads'), ('music','Música','music'), ('settings','Ajustes','settings')]:
             item = NavItem(img, text, active=(name == active), size_hint=(1, 1),
                            on_release_cb=lambda n=name, s=screen: self._go(s, n))
             self.add_widget(item)
@@ -795,7 +795,7 @@ class Music(Base):
         b = B(text='‹', font_size=sp(30), size_hint_x=None, width=dp(38))
         b.bind(on_release=lambda *_: self.manager.go('home'))
         h.add_widget(b)
-        h.add_widget(Label(text='Descargar música', color=WHITE, font_size=sp(16), bold=True, halign='left'))
+        h.add_widget(Label(text='Música', color=WHITE, font_size=sp(16), bold=True, halign='left'))
         c.add_widget(h)
         q = TextBox(hint_text='Buscar canciones...', size_hint_y=None, height=dp(48))
         q.bind(on_text_validate=lambda *_: self.manager.music_search(q.text))
@@ -859,6 +859,41 @@ class Music(Base):
                 row.set_playing(True)
         except Exception as e:
             crashlog.write_log('Error preview musica: ' + str(e)[:120])
+
+    def on_pre_enter(self):
+        self.stop_preview()
+        if not self.query_field.text.strip():
+            self.show_local_audios()
+
+    def show_local_audios(self):
+        self.results_box.clear_widgets()
+        mgr = self.manager
+        audios = [d for d in getattr(mgr, 'downloads', []) if d.get('format') == 'MP3']
+        if not audios:
+            self.results_box.add_widget(Label(text='No hay descargas de audio.\nBusca y descarga canciones arriba.', color=DIM, size_hint_y=None, height=dp(70)))
+            return
+        self.results_box.add_widget(Label(text='Tus canciones descargadas', color=MUTED, font_size=sp(10), size_hint_y=None, height=dp(24), halign='left'))
+        for item in audios:
+            title = safe_text(item.get('title', 'Sin título'), 'Sin título')
+            dur = item.get('duration') or ''
+            dur_s = ''
+            if dur:
+                try:
+                    dur_s = f'{int(dur)//60}:{int(dur)%60:02d}'
+                except Exception:
+                    pass
+            row = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(8), padding=(dp(6), dp(4)))
+            rr(row, SUR, 12, BORDER)
+            play_b = B(text='', size_hint_x=None, width=dp(38))
+            rr(play_b, SUR2, 10, BORDER)
+            draw_icon(play_b, 'play')
+            play_b.bind(on_release=lambda *_i, it=item: mgr.play_download(it))
+            info = BoxLayout(orientation='vertical', spacing=dp(1))
+            info.add_widget(Label(text=title, color=WHITE, font_size=sp(10.5), bold=True, halign='left', valign='middle', text_size=(None, None)))
+            info.add_widget(Label(text=dur_s, color=MUTED, font_size=sp(8.5), halign='left', valign='middle', text_size=(None, None)))
+            row.add_widget(play_b)
+            row.add_widget(info)
+            self.results_box.add_widget(row)
 
 
 class Toggle(ButtonBehavior, Widget):
