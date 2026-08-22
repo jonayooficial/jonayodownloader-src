@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.7'
+APP_VERSION = '2.0.8'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -748,12 +748,16 @@ class Downloads(Base):
 
 
 class MusicRow(ClickableBox):
-    """Fila de música: lista limpia sin miniatura, con play y descargar."""
+    """Fila de música: lista limpia sin miniatura, con play y descargar.
+    Toque largo = menu contextual (reproducir/favoritos/descargar)."""
     def __init__(self, item, **kw):
         self.item = item
         super().__init__(bg=SUR, radius=14, border=BORDER, orientation='horizontal',
                          spacing=dp(8), padding=(dp(12), dp(6)),
                          size_hint_y=None, height=dp(64), **kw)
+        import time as _t
+        self._press_t = 0.0
+        self.bind(state=self._on_state)
         num = BoxLayout(size_hint_x=None, width=dp(28), padding=(0, 0))
         num.add_widget(Label(text=str(item.get('idx', '') or ''), color=MUTED,
                              font_size=sp(10), halign='center', valign='middle'))
@@ -780,8 +784,18 @@ class MusicRow(ClickableBox):
         draw_icon(dl, 'dl')
         self.add_widget(dl)
         dl.bind(on_release=lambda *_: self.manager.music_download(self.item))
+    def _on_state(self, _, value):
+        if value == 'down':
+            self._press_t = time.time()
+    def on_release(self):
+        held = time.time() - self._press_t
+        if held >= 0.55:
+            self.manager.show_music_menu(self.item)
+        else:
+            self.manager.music_queue_add(self.item)
     def bind_play(self, cb):
-        self.play_btn.bind(on_release=lambda *_: cb(self.item, self))
+        # Compatibilidad: el play directo ahora lo maneja on_release.
+        pass
     def set_playing(self, playing):
         draw_icon(self.play_btn, 'stop' if playing else 'play')
 
@@ -794,6 +808,7 @@ class Music(Base):
         body.bind(minimum_height=body.setter('height')); self.body = body; self.content.add_widget(body)
         self._preview = None
         self._mp_visible = False
+        self._view_mode = 'local'
         self.build(); self.add_widget(self.make())
         self._build_mini_player()
 
@@ -804,13 +819,18 @@ class Music(Base):
         b.bind(on_release=lambda *_: self.manager.go('home'))
         h.add_widget(b)
         h.add_widget(Label(text='Musica', color=WHITE, font_size=sp(16), bold=True, halign='left'))
+        fav_b = B(text='', size_hint_x=None, width=dp(38))
+        rr(fav_b, SUR2, 10, BORDER)
+        draw_icon(fav_b, 'music')
+        fav_b.bind(on_release=lambda *_: self.toggle_favorites())
+        h.add_widget(fav_b)
         c.add_widget(h)
         q = TextBox(hint_text='Buscar canciones...', size_hint_y=None, height=dp(48))
         q.bind(on_text_validate=lambda *_: self.manager.music_search(q.text))
         self.query_field = q
         c.add_widget(q)
         hint = Card(size_hint_y=None, height=dp(40))
-        hint.add_widget(Label(text='Toca play para escuchar, flecha para descargar', color=DIM, font_size=sp(9), halign='center'))
+        hint.add_widget(Label(text='Toca play para escuchar · Manten presionado para opciones', color=DIM, font_size=sp(9), halign='center'))
         c.add_widget(hint)
         box = BoxLayout(orientation='vertical', spacing=dp(8), size_hint_y=None)
         box.bind(minimum_height=box.setter('height')); self.results_box = box; c.add_widget(box)
@@ -820,9 +840,12 @@ class Music(Base):
                                   pos_hint={'bottom': 1}, opacity=0)
         rr(mp, (0, 0, 0, 0.92), 0)
         top_row = BoxLayout(size_hint_y=None, height=dp(32), padding=(dp(8), 0), spacing=dp(6))
+        self._mp_title_wrap = ClickableBox(bg=(0, 0, 0, 0), border=None, size_hint_x=1)
         self._mp_title = Label(text='', color=WHITE, font_size=sp(10), bold=True,
-                               halign='left', valign='middle', size_hint_x=1, shorten=True)
-        top_row.add_widget(self._mp_title)
+                               halign='left', valign='middle', shorten=True)
+        self._mp_title_wrap.add_widget(self._mp_title)
+        self._mp_title_wrap.bind(on_release=lambda *_: self.show_queue())
+        top_row.add_widget(self._mp_title_wrap)
         close_b = B(text='X', font_size=sp(12), size_hint_x=None, width=dp(32), color=MUTED)
         close_b.bind(on_release=lambda *_: self.manager.music_stop())
         top_row.add_widget(close_b)
@@ -841,7 +864,21 @@ class Music(Base):
         self._mp_next.bind(on_release=lambda *_: self.manager.music_next())
         bot_row.add_widget(self._mp_next)
         self._mp_slider = Slider(min=0, max=1, value=0, size_hint_x=1)
+        self._mp_seeking = False
+        def _seek_start(*_):
+            self._mp_seeking = True
+        def _seek_end(*_):
+            self._mp_seeking = False
+            try:
+                self.manager.music_seek(self._mp_slider.value)
+            except Exception:
+                pass
+        self._mp_slider.bind(on_touch_down=_seek_start)
+        self._mp_slider.bind(on_touch_up=_seek_end)
         bot_row.add_widget(self._mp_slider)
+        self._mp_time = Label(text='', color=MUTED, font_size=sp(8),
+                              size_hint_x=None, width=dp(66), halign='center')
+        bot_row.add_widget(self._mp_time)
         mp.add_widget(bot_row)
         self.add_widget(mp)
 
@@ -859,11 +896,80 @@ class Music(Base):
     def set_query(self, q):
         self.query_field.text = q
         self.stop_preview()
+        self._view_mode = 'local'
         self.results_box.clear_widgets()
         self.results_box.add_widget(Label(text='Buscando...', color=DIM, size_hint_y=None, height=dp(50)))
 
+    def toggle_favorites(self):
+        if self._view_mode == 'favs':
+            self._view_mode = 'local'
+            self.on_pre_enter()
+        else:
+            self.show_favorites()
+
+    def show_favorites(self):
+        self.stop_preview()
+        self._view_mode = 'favs'
+        favs = getattr(self.manager, '_music_favs', [])
+        self.results_box.clear_widgets()
+        head = Label(text='Favoritos (%d)' % len(favs), color=MUTED, font_size=sp(10),
+                     size_hint_y=None, height=dp(24), halign='left')
+        self.results_box.add_widget(head)
+        if not favs:
+            self.results_box.add_widget(Label(
+                text='Sin favoritos.\nManten presionada una cancion\ny elegi "Agregar a favoritos".',
+                color=DIM, size_hint_y=None, height=dp(80), halign='center'))
+            return
+        for idx, it in enumerate(favs):
+            it['idx'] = idx + 1
+            row = MusicRow(dict(it))
+            row.manager = self.manager
+            self.results_box.add_widget(row)
+
+    def show_queue(self):
+        """Modal con la cola de reproduccion; tocar un item salta a ese track."""
+        q = getattr(self.manager, '_music_queue', [])
+        cur = getattr(self.manager, '_music_idx', -1)
+        d = ModalView(size_hint=(0.9, None), height=dp(380), background_color=(0, 0, 0, 0.55))
+        card = Card(size_hint=(1, 1), orientation='vertical', padding=dp(10), spacing=dp(6))
+        head = BoxLayout(size_hint_y=None, height=dp(34))
+        head.add_widget(Label(text='Cola de reproduccion', color=WHITE, font_size=sp(14),
+                              bold=True, halign='left'))
+        close = B(text='X', size_hint_x=None, width=dp(32), color=MUTED)
+        close.bind(on_release=lambda *_: d.dismiss())
+        head.add_widget(close)
+        card.add_widget(head)
+        sv = ScrollView(do_scroll_x=False, bar_width=0)
+        box = BoxLayout(orientation='vertical', spacing=dp(4), size_hint_y=None)
+        box.bind(minimum_height=box.setter('height'))
+        if not q:
+            box.add_widget(Label(text='La cola esta vacia.', color=DIM,
+                                 size_hint_y=None, height=dp(40)))
+        for i, it in enumerate(q):
+            active = (i == cur)
+            rowb = ClickableBox(bg=RED if active else SUR, radius=10,
+                                border=None if active else BORDER,
+                                orientation='horizontal', padding=(dp(8), 0),
+                                spacing=dp(4), size_hint_y=None, height=dp(42))
+            rowb.add_widget(Label(text=str(i + 1), color=WHITE if active else MUTED,
+                                  font_size=sp(9), size_hint_x=None, width=dp(22)))
+            rowb.add_widget(Label(text=safe_text(it.get('title', ''), 'Sin titulo'),
+                                  color=WHITE if active else MUTED, font_size=sp(9.5),
+                                  shorten=True, shorten_from='right'))
+
+            def _jump(idx=i):
+                self.manager.music_jump(idx)
+                d.dismiss()
+            rowb.bind(on_release=lambda *_, f=_jump: f())
+            box.add_widget(rowb)
+        sv.add_widget(box)
+        card.add_widget(sv)
+        d.add_widget(card)
+        d.open()
+
     def show_results(self, items):
         self.stop_preview()
+        self._view_mode = 'local'
         self.results_box.clear_widgets()
         if not items:
             self.results_box.add_widget(Label(text='Sin resultados', color=DIM, size_hint_y=None, height=dp(50)))
@@ -1064,6 +1170,9 @@ class M(ScreenManager):
         self._music_sound = None
         self._music_playing = False
         self._music_tick = None
+        self._music_suppress_stop = False
+        self._favs_path = os.path.join(self._data_dir(), '.music_favs.json')
+        self._music_favs = self._load_favs()
 
         self.add_widget(Home(name='home'))
 
@@ -1294,24 +1403,27 @@ class M(ScreenManager):
         return url
 
     def _thumb_download(self, url, local):
-        try:
+        for intento in range(2):
             try:
-                import certifi
-                import ssl
-                ctx = ssl.create_default_context(cafile=certifi.where())
-                import urllib.request
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=8, context=ctx) as r:
-                    data = r.read()
+                try:
+                    import certifi
+                    import ssl
+                    ctx = ssl.create_default_context(cafile=certifi.where())
+                    import urllib.request
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=8, context=ctx) as r:
+                        data = r.read()
+                except Exception:
+                    import requests as _req
+                    r = _req.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=8, verify=True)
+                    data = r.content
+                if data and len(data) > 500:
+                    with open(local, 'wb') as f:
+                        f.write(data)
+                    return
             except Exception:
-                import requests as _req
-                r = _req.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=8, verify=True)
-                data = r.content
-            if data and len(data) > 500:
-                with open(local, 'wb') as f:
-                    f.write(data)
-        except Exception:
-            pass
+                pass
+            time.sleep(2)
 
     def _to_video(self, e, idx):
         dur = e.get('duration') or 0
@@ -1869,7 +1981,7 @@ class M(ScreenManager):
                         except Exception as e:
                             self._info('Audio','No se pudo activar el modo audio.'); crashlog.write_log('Audio fallo: '+str(e)[:120])
                     v.opacity=0; state['mode']='audio'
-                    draw_icon(ab,'play')
+                    draw_icon(ab,'music')
                 else:
                     if state['sound'] is not None:
                         try: state['sound'].stop(); state['sound'].unload()
@@ -2094,32 +2206,6 @@ class M(ScreenManager):
             err = str(e)[:150]
             crashlog.write_log("Error musica: " + err)
             Clock.schedule_once(lambda dt: self.get_screen('music').show_error(err))
-
-    def music_preview(self, item, row=None):
-        """Reproduce un preview del audio de la canción."""
-        url = item.get('url') or ''
-        if not url:
-            return
-        screen = self.get_screen('music')
-        if screen._preview is not None:
-            screen.stop_preview()
-            return
-
-        def _run():
-            import yt_dlp
-            try:
-                ydl_opts = {'format': 'bestaudio/best', 'quiet': True, 'no_warnings': True,
-                            'nocheckcertificate': True, 'socket_timeout': 15}
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                src = (info or {}).get('url') or ''
-                Clock.schedule_once(lambda dt: screen.set_preview(src, row))
-            except Exception as e:
-                err = str(e)[:120]
-                crashlog.write_log('Error preview audio: ' + err)
-                Clock.schedule_once(lambda dt: self._info('Preview', 'No se pudo reproducir.\n' + err))
-
-        threading.Thread(target=_run, daemon=True).start()
 
     def music_download(self, item):
         """Descarga solo el audio de la canción seleccionada."""
@@ -2816,6 +2902,24 @@ class M(ScreenManager):
             self.get_screen('downloading').pause_btn.text = '\u2160  Pausar'
         self._launch_download_thread()
 
+    def show_music_menu(self, item):
+        """Menu contextual de una cancion: reproducir, favoritos, descargar."""
+        es_fav = self.music_is_fav(item)
+        fav_label = 'Quitar de favoritos' if es_fav else 'Agregar a favoritos'
+        actions = [
+            ('Reproducir', lambda: self.music_queue_add(item)),
+            (fav_label, lambda: self._toggle_fav_and_refresh(item)),
+            ('Descargar', lambda: self.music_download(item)),
+        ]
+        ContextMenu(safe_text(item.get('title', ''), 'Cancion'), actions).open()
+
+    def _toggle_fav_and_refresh(self, item):
+        quedo = self.music_fav_toggle(item)
+        screen = self.get_screen('music')
+        if getattr(screen, '_view_mode', 'local') == 'favs':
+            screen.show_favorites()
+        return quedo
+
     def music_queue_add(self, item, row=None):
         """Agrega una cancion a la cola y la reproduce."""
         self._music_queue.append(dict(item))
@@ -2901,16 +3005,33 @@ class M(ScreenManager):
             try:
                 pos = snd.get_pos()
                 dur = snd.length if hasattr(snd, 'length') and snd.length else 0
-                if dur > 0 and screen._mp_slider:
+                if dur > 0 and screen._mp_slider is not None:
                     screen._mp_slider.max = dur
-                    if not screen._mp_slider._focus:
+                    if not getattr(screen, '_mp_seeking', False):
                         screen._mp_slider.value = pos
+                if screen._mp_time is not None:
+                    fm = lambda x: "{}:{:02d}".format(int(x // 60), int(x % 60))
+                    screen._mp_time.text = fm(pos) + ' / ' + (fm(dur) if dur else '0:00')
             except Exception:
                 pass
         self._music_tick = Clock.schedule_interval(_tick, 0.5)
 
+    def music_seek(self, value):
+        """Busca la posicion indicada (segundos) en la cancion actual."""
+        snd = self._music_sound
+        if snd is None:
+            return
+        try:
+            snd.seek(value)
+        except Exception as e:
+            crashlog.write_log('Error seek musica: ' + str(e)[:120])
+
     def _music_on_stop(self, *args):
-        """Callback cuando la cancion termina: avanza a la siguiente."""
+        """Callback cuando la cancion termina: avanza a la siguiente.
+        Si la detencion fue manual (pausa/cambio de track), no avanza."""
+        if self._music_suppress_stop:
+            self._music_suppress_stop = False
+            return
         if not self._music_playing:
             return
         self._music_playing = False
@@ -2931,6 +3052,7 @@ class M(ScreenManager):
         if snd is None:
             return
         if self._music_playing:
+            self._music_suppress_stop = True
             snd.stop()
             self._music_playing = False
             screen = self.get_screen('music')
@@ -2955,6 +3077,44 @@ class M(ScreenManager):
         screen = self.get_screen('music')
         screen.hide_mini_player()
 
+    # ─── FAVORITOS MUSICA ────────────────────────────────────
+    def _load_favs(self):
+        try:
+            import json
+            with open(self._favs_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+    def _save_favs(self):
+        try:
+            import json
+            with open(self._favs_path, 'w', encoding='utf-8') as f:
+                json.dump(self._music_favs, f, ensure_ascii=False)
+        except Exception as e:
+            crashlog.write_log('Error guardando favoritos: ' + str(e)[:120])
+
+    def music_is_fav(self, item):
+        url = item.get('url', '')
+        return any(f.get('url') == url for f in self._music_favs)
+
+    def music_fav_toggle(self, item):
+        """Agrega o quita de favoritos. Devuelve True si quedo como favorito."""
+        url = item.get('url', '')
+        for i, f in enumerate(self._music_favs):
+            if f.get('url') == url:
+                del self._music_favs[i]
+                self._save_favs()
+                return False
+        self._music_favs.insert(0, dict(item))
+        self._save_favs()
+        return True
+
+    def music_jump(self, idx):
+        """Salta a la posicion idx de la cola."""
+        if 0 <= idx < len(self._music_queue):
+            self._music_play_idx(idx)
+
     def _music_stop_internal(self):
         if self._music_tick:
             try:
@@ -2963,6 +3123,7 @@ class M(ScreenManager):
                 pass
             self._music_tick = None
         if self._music_sound:
+            self._music_suppress_stop = True
             try:
                 self._music_sound.stop()
                 self._music_sound.unload()
@@ -3090,19 +3251,28 @@ class M(ScreenManager):
         crashlog.write_log('Chequeo de actualizaciones manual')
         self._info('Chequeando...', 'Buscando nueva version...')
 
+        def _close_checking():
+            dlg = getattr(self, '_last_dialog', None)
+            if dlg is not None:
+                try:
+                    dlg.dismiss()
+                except Exception:
+                    pass
+                self._last_dialog = None
+
         def _run():
             try:
-                from updater import get_latest_version
+                from updater import get_latest_version, updater_error
                 update = get_latest_version()
                 if update:
-                    Clock.schedule_once(lambda dt: self._on_update_check(update))
+                    Clock.schedule_once(lambda dt: (_close_checking(), self._on_update_check(update)))
                 else:
-                    Clock.schedule_once(lambda dt: self._info('Sin conexion',
-                                                              'No se pudo verificar. Revisa tu conexion a internet.'))
+                    msg = updater_error() or 'Revisa tu conexion a internet.'
+                    Clock.schedule_once(lambda dt: (_close_checking(), self._info('Sin conexion', msg)))
             except Exception as e:
                 err = str(e)[:120]
-                Clock.schedule_once(lambda dt: self._info('Sin conexion',
-                                                          'No se pudo verificar. ' + err))
+                Clock.schedule_once(lambda dt: (_close_checking(), self._info('Sin conexion',
+                                                                              'No se pudo verificar. ' + err)))
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -3121,7 +3291,8 @@ class M(ScreenManager):
     def _update_dialog(self, update):
         notes = update.get('notes', '') or ''
         if notes:
-            parts = [p.strip() for p in notes.replace('\n', ',').split(',') if p.strip()]
+            parts = [p.strip().lstrip('-').strip()
+                     for p in notes.replace('\n', ',').split(',') if p.strip()]
             notes = '\n'.join('- ' + p for p in parts)
         box = Card(size_hint_y=None, height=dp(280))
         box.add_widget(Label(text='Nueva version disponible', color=WHITE, font_size=sp(15),
