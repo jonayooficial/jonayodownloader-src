@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.10'
+APP_VERSION = '2.0.11'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -562,7 +562,8 @@ class ContextMenu(ModalView):
                    padding=dp(12), spacing=dp(4), card_color=SUR2)
         head = BoxLayout(size_hint_y=None, height=dp(38))
         head.add_widget(Label(text=title, color=WHITE, font_size=sp(15), bold=True, halign='left'))
-        close = B(text='×', color=MUTED, font_size=sp(22), size_hint_x=None, width=dp(35))
+        close = B(text='', size_hint_x=None, width=dp(35))
+        btn_img(close, 'close', dp(14))
         close.bind(on_release=lambda *_: self.dismiss())
         head.add_widget(close)
         box.add_widget(head)
@@ -955,7 +956,9 @@ class Music(Base):
     def build(self):
         c = self.body
         h = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(6))
-        b = B(text='<', font_size=sp(30), size_hint_x=None, width=dp(38))
+        b = B(text='', size_hint_x=None, width=dp(38))
+        rr(b, SUR2, 10, BORDER)
+        btn_img(b, 'back', dp(18))
         b.bind(on_release=lambda *_: self.manager.go('home'))
         h.add_widget(b)
         h.add_widget(Label(text='Musica', color=WHITE, font_size=sp(16), bold=True, halign='left'))
@@ -986,7 +989,9 @@ class Music(Base):
         self._mp_title_wrap.add_widget(self._mp_title)
         self._mp_title_wrap.bind(on_release=lambda *_: self.show_queue())
         top_row.add_widget(self._mp_title_wrap)
-        close_b = B(text='X', font_size=sp(12), size_hint_x=None, width=dp(32), color=MUTED)
+        close_b = B(text='', size_hint_x=None, width=dp(32))
+        rr(close_b, (1, 1, 1, 0.10), 16, None)
+        btn_img(close_b, 'close', dp(13))
         close_b.bind(on_release=lambda *_: self.manager.music_stop())
         top_row.add_widget(close_b)
         mp.add_widget(top_row)
@@ -1067,7 +1072,9 @@ class Music(Base):
         head = BoxLayout(size_hint_y=None, height=dp(34))
         head.add_widget(Label(text='Cola de reproduccion', color=WHITE, font_size=sp(14),
                               bold=True, halign='left'))
-        close = B(text='X', size_hint_x=None, width=dp(32), color=MUTED)
+        close = B(text='', size_hint_x=None, width=dp(32))
+        rr(close, (1, 1, 1, 0.10), 16, None)
+        btn_img(close, 'close', dp(13))
         close.bind(on_release=lambda *_: d.dismiss())
         head.add_widget(close)
         card.add_widget(head)
@@ -1655,9 +1662,12 @@ class M(ScreenManager):
                               color=WHITE, font_size=sp(9.5), halign='left', valign='middle',
                               shorten=True, shorten_from='right', text_size=(None,None))
                 row.add_widget(title)
-                play = B(text='▶', size_hint_x=None, width=dp(42), font_size=sp(12))
+                play = B(text='', size_hint_x=None, width=dp(42))
                 rr(play, RED, 9)
-                rem = B(text='X', size_hint_x=None, width=dp(42), font_size=sp(11))
+                btn_img(play, 'play', dp(14))
+                rem = B(text='', size_hint_x=None, width=dp(42))
+                rr(rem, SUR2, 9, BORDER)
+                btn_img(rem, 'close', dp(12))
                 rr(rem, SUR2, 9, BORDER)
                 play.bind(on_release=lambda *_ , item=item: (self.play_queue.remove(item), d.dismiss(),
                                                                self.play_stream(item, '720p')))
