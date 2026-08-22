@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.9'
+APP_VERSION = '2.0.10'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -83,11 +83,34 @@ def icon(name):
 
 def btn_img(btn, name, size=None):
     """Icono PNG centrado dentro de un boton; devuelve el Image para poder
-    cambiar el source despues (play/pause, fs/fs_exit...)."""
+    cambiar el source despues (play/pause, fs/fs_exit...).
+    No usa pos_hint (no funciona en Button); centra manualmente."""
     size = size or dp(20)
     img = Image(source=PICON + name + '.png', size_hint=(None, None),
-                size=(size, size), pos_hint={'center_x': .5, 'center_y': .5},
-                allow_stretch=True, keep_ratio=True)
+                size=(size, size), allow_stretch=True, keep_ratio=True)
+    def _sync(*_):
+        try:
+            img.center = btn.center
+        except Exception:
+            pass
+    btn.bind(pos=_sync, size=_sync)
+    Clock.schedule_once(lambda dt: _sync(), 0)
+    btn.add_widget(img)
+    return img
+
+
+def coin_bg(btn, size=None):
+    """Fondo circular degradado para el play principal."""
+    size = size or dp(38)
+    img = Image(source=PICON + 'coin.png', size_hint=(None, None),
+                size=(size, size), allow_stretch=True, keep_ratio=True)
+    def _sync(*_):
+        try:
+            img.center = btn.center
+        except Exception:
+            pass
+    btn.bind(pos=_sync, size=_sync)
+    Clock.schedule_once(lambda dt: _sync(), 0)
     btn.add_widget(img)
     return img
 
@@ -974,9 +997,7 @@ class Music(Base):
         self._mp_prev.bind(on_release=lambda *_: self.manager.music_prev())
         bot_row.add_widget(self._mp_prev)
         self._mp_play = B(text='', size_hint_x=None, width=dp(38))
-        self._mp_play.add_widget(Image(source=PICON + 'coin.png', size_hint=(None, None),
-                                       size=(dp(38), dp(38)), pos_hint={'center_x': .5, 'center_y': .5},
-                                       allow_stretch=True, keep_ratio=True))
+        coin_bg(self._mp_play, dp(38))
         self._mp_play_img = btn_img(self._mp_play, 'pause', dp(17))
         self._mp_play.bind(on_release=lambda *_: self.manager.music_toggle())
         bot_row.add_widget(self._mp_play)
@@ -1983,9 +2004,7 @@ class M(ScreenManager):
                              padding=(dp(12),dp(6)))
             rr(bottom,(0,0,0,0.50),0)
             pb=B(text='',size_hint_x=None,width=dp(40))
-            pb.add_widget(Image(source=PICON + 'coin.png', size_hint=(None, None),
-                                size=(dp(40), dp(40)), pos_hint={'center_x': .5, 'center_y': .5},
-                                allow_stretch=True, keep_ratio=True))
+            coin_bg(pb, dp(40))
             pb_img=btn_img(pb,'pause',dp(18))
             prev=B(text='',size_hint_x=None,width=dp(38)); rr(prev,(1,1,1,0.14),19,None); btn_img(prev,'prev',dp(17))
             nxt=B(text='',size_hint_x=None,width=dp(38)); rr(nxt,(1,1,1,0.14),19,None); btn_img(nxt,'next',dp(17))
@@ -2813,9 +2832,7 @@ class M(ScreenManager):
             ctrl = BoxLayout(size_hint=(1, None), height=dp(50), spacing=dp(10), padding=(dp(12), dp(6)))
             rr(ctrl, (0, 0, 0, 0.50), 0)
             pb = B(text='', size_hint_x=None, width=dp(40))
-            pb.add_widget(Image(source=PICON + 'coin.png', size_hint=(None, None),
-                                size=(dp(40), dp(40)), pos_hint={'center_x': .5, 'center_y': .5},
-                                allow_stretch=True, keep_ratio=True))
+            coin_bg(pb, dp(40))
             pb_img = btn_img(pb, 'pause', dp(18))
 
             def _seek_audio_file(val):
