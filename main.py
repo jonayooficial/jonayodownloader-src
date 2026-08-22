@@ -2071,18 +2071,20 @@ class M(ScreenManager):
         try:
             ydl_opts = {'quiet': True, 'no_warnings': True, 'noplaylist': True,
                         'check_formats': False, 'nocheckcertificate': True,
-                        'socket_timeout': 15, 'extract_flat': 'in_playlist'}
+                        'socket_timeout': 15, 'extract_flat': True}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 results = ydl.extract_info('ytsearch10:' + query, download=False)
             items = []
             for idx, e in enumerate((results.get('entries') or [])):
                 if not e or not e.get('id'):
                     continue
+                vid = e.get('id') or ''
+                page_url = 'https://www.youtube.com/watch?v=' + str(vid)
                 dur = e.get('duration') or 0
                 dur_txt = f"{int(dur // 60)}:{int(dur % 60):02d}" if dur else ''
                 items.append({
                     'title': e.get('title', 'Sin titulo'),
-                    'url': e.get('webpage_url') or e.get('url'),
+                    'url': page_url,
                     'duration': dur_txt,
                     'channel': e.get('uploader', ''),
                     'color': idx % 5,
@@ -2833,11 +2835,20 @@ class M(ScreenManager):
         def _run():
             import yt_dlp
             try:
-                ydl_opts = {'format': 'bestaudio/best', 'quiet': True, 'no_warnings': True,
+                ydl_opts = {'format': 'bestaudio[ext=m4a]/bestaudio/best',
+                            'quiet': True, 'no_warnings': True,
                             'nocheckcertificate': True, 'socket_timeout': 15}
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=False)
-                src = (info or {}).get('url') or ''
+                src = ''
+                if info:
+                    src = info.get('url') or ''
+                    if not src:
+                        fmts = info.get('formats') or []
+                        for f in reversed(fmts):
+                            if f.get('url'):
+                                src = f['url']
+                                break
                 Clock.schedule_once(lambda dt: on_done(src))
             except Exception as e:
                 crashlog.write_log('Error resolviendo audio: ' + str(e)[:120])
