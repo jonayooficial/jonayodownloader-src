@@ -3116,20 +3116,25 @@ class M(ScreenManager):
             Clock.schedule_once(lambda dt: self._info('Sin actualizaciones',
                                                       f'Ya tienes la ultima version (v{APP_VERSION}).'))
             return
-        notes = update.get('notes', '')
-        if len(notes) > 200:
-            notes = notes[:200] + '...'
-        self._update_dialog(update, notes)
+        self._update_dialog(update)
 
-    def _update_dialog(self, update, notes):
-        box = Card(size_hint_y=None, height=dp(240))
-        box.add_widget(Label(text='Nueva version disponible!', color=WHITE, font_size=sp(15),
+    def _update_dialog(self, update):
+        notes = update.get('notes', '') or ''
+        if notes:
+            parts = [p.strip() for p in notes.replace('\n', ',').split(',') if p.strip()]
+            notes = '\n'.join('- ' + p for p in parts)
+        box = Card(size_hint_y=None, height=dp(280))
+        box.add_widget(Label(text='Nueva version disponible', color=WHITE, font_size=sp(15),
                              bold=True, halign='center', size_hint_y=None, height=dp(30)))
-        box.add_widget(Label(text=f"Tu version: {update['current']}\nNueva version: {update['version']}\n\n{notes}",
-                             color=MUTED, font_size=sp(12), halign='center',
-                             text_size=(None, None), size_hint_y=None, height=dp(120)))
+        ver_text = "v{}  ->  v{}".format(update.get('current', ''), update.get('version', ''))
+        box.add_widget(Label(text=ver_text, color=GREEN, font_size=sp(12), bold=True,
+                             halign='center', size_hint_y=None, height=dp(24)))
+        if notes:
+            box.add_widget(Label(text=notes, color=MUTED, font_size=sp(10),
+                                 halign='left', valign='top',
+                                 text_size=(dp(260), None), size_hint_y=None, height=dp(140)))
         row = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(8))
-        ok = B(text='Cerrar')
+        ok = B(text='Cancelar')
         rr(ok, SUR2, 12)
         ok.bind(on_release=lambda *_: d.dismiss())
         dl = B(text='Actualizar', color=WHITE)
@@ -3138,7 +3143,7 @@ class M(ScreenManager):
         row.add_widget(ok)
         row.add_widget(dl)
         box.add_widget(row)
-        d = ModalView(size_hint=(0.85, 0.45), background_color=(0, 0, 0, 0))
+        d = ModalView(size_hint=(0.85, 0.50), background_color=(0, 0, 0, 0))
         d.add_widget(box)
         d.open()
 
