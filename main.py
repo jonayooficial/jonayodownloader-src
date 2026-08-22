@@ -51,7 +51,7 @@ if IS_ANDROID:
     crashlog.write_log("imports android OK")
 
 # ─── UI MODERNA ─────────────────────────────────────────────────
-from kivy.graphics import Color, RoundedRectangle, Rectangle, Line, Triangle
+from kivy.graphics import Color, RoundedRectangle, Rectangle, Line, Triangle, Ellipse
 from kivy.uix.floatlayout import FloatLayout
 
 BG      = (0.018, 0.027, 0.037, 1)
@@ -70,13 +70,32 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.8'
+APP_VERSION = '2.0.9'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
+PICON = 'assets/icons/player/'
 
 
 def icon(name):
     return os.path.join(ICONS, name + '.png')
+
+
+def btn_img(btn, name, size=None):
+    """Icono PNG centrado dentro de un boton; devuelve el Image para poder
+    cambiar el source despues (play/pause, fs/fs_exit...)."""
+    size = size or dp(20)
+    img = Image(source=PICON + name + '.png', size_hint=(None, None),
+                size=(size, size), pos_hint={'center_x': .5, 'center_y': .5},
+                allow_stretch=True, keep_ratio=True)
+    btn.add_widget(img)
+    return img
+
+
+def set_icon(img_widget, name):
+    try:
+        img_widget.source = PICON + name + '.png'
+    except Exception:
+        pass
 
 
 def rr(w, c=SUR, r=16, border=None):
@@ -313,6 +332,93 @@ class ClickableBox(ButtonBehavior, BoxLayout):
         super().__init__(**kw)
         rr(self, bg, radius, border)
         self._pressed = False
+
+
+class SeekBar(Widget):
+    """Barra de progreso estilo profesional: track fino, relleno de color y
+    knob pequeno. Reemplaza al Slider nativo de Kivy (knob gigante azul)."""
+    def __init__(self, on_seek=None, height_bar=None, **kw):
+        super().__init__(**kw)
+        self.vmin = 0.0
+        self.vmax = 1.0
+        self.value = 0.0
+        self.dragging = False
+        self.on_seek_cb = on_seek
+        with self.canvas:
+            Color(1, 1, 1, 0.22)
+            self._track = RoundedRectangle(radius=[dp(2)])
+            Color(*RED)
+            self._fill = RoundedRectangle(radius=[dp(2)])
+            Color(1, 1, 1, 0.95)
+            self._knob = Ellipse()
+        self.bind(pos=self._redraw, size=self._redraw)
+
+    def _knob_r(self):
+        return dp(7) if not self.dragging else dp(9)
+
+    def _x_for(self, v):
+        span = max(self.vmax - self.vmin, 1e-6)
+        t = (v - self.vmin) / span
+        pad = self._knob_r()
+        return self.x + pad + t * (self.width - 2 * pad)
+
+    def _v_for(self, x):
+        pad = self._knob_r()
+        w = max(self.width - 2 * pad, 1)
+        t = min(max((x - (self.x + pad)) / w, 0.0), 1.0)
+        return self.vmin + t * (self.vmax - self.vmin)
+
+    def _redraw(self, *_):
+        h = dp(4)
+        cy = self.center_y
+        k = self._knob_r()
+        self._track.pos = (self.x, cy - h / 2)
+        self._track.size = (self.width, h)
+        fx = self._x_for(self.value)
+        self._fill.pos = (self.x, cy - h / 2)
+        self._fill.size = (max(fx - self.x, 0), h)
+        self._knob.pos = (fx - k, cy - k)
+        self._knob.size = (2 * k, 2 * k)
+
+    def set_value(self, v):
+        if not self.dragging:
+            v = min(max(v, self.vmin), self.vmax)
+            self.value = v
+            self._redraw()
+
+    def set_range(self, vmax):
+        self.vmax = float(vmax or 1.0)
+        self._redraw()
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            self.dragging = True
+            touch.grab(self)
+            self.value = self._v_for(touch.x)
+            self._redraw()
+            return True
+        return super().on_touch_down(touch)
+
+    def on_touch_move(self, touch):
+        if touch.grab_current is self:
+            self.value = self._v_for(touch.x)
+            self._redraw()
+            return True
+        return super().on_touch_move(touch)
+
+    def on_touch_up(self, touch):
+        if touch.grab_current is self:
+            self.dragging = False
+            self.value = self._v_for(touch.x)
+            self._redraw()
+            if self.on_seek_cb:
+                try:
+                    self.on_seek_cb(self.value)
+                except Exception:
+                    pass
+            touch.ungrab(self)
+            return True
+        return super().on_touch_up(touch)
 
 
 class IconTextButton(ClickableBox):
@@ -777,11 +883,11 @@ class MusicRow(ClickableBox):
         self.add_widget(col)
         self.play_btn = B(text='', size_hint=(None, None), size=(dp(40), dp(40)))
         rr(self.play_btn, SUR2, 12, BORDER)
-        draw_icon(self.play_btn, 'play')
+        self.play_img = btn_img(self.play_btn, 'play', dp(19))
         self.add_widget(self.play_btn)
         dl = B(text='', size_hint=(None, None), size=(dp(40), dp(40)))
         rr(dl, RED, 20)
-        draw_icon(dl, 'dl')
+        btn_img(dl, 'dl', dp(18))
         self.add_widget(dl)
         dl.bind(on_release=lambda *_: self.manager.music_download(self.item))
     def _on_state(self, _, value):
@@ -797,7 +903,7 @@ class MusicRow(ClickableBox):
         # Compatibilidad: el play directo ahora lo maneja on_release.
         pass
     def set_playing(self, playing):
-        draw_icon(self.play_btn, 'stop' if playing else 'play')
+        set_icon(self.play_img, 'stop' if playing else 'play')
 
 
 class Music(Base):
@@ -821,7 +927,7 @@ class Music(Base):
         h.add_widget(Label(text='Musica', color=WHITE, font_size=sp(16), bold=True, halign='left'))
         fav_b = B(text='', size_hint_x=None, width=dp(38))
         rr(fav_b, SUR2, 10, BORDER)
-        draw_icon(fav_b, 'music')
+        btn_img(fav_b, 'heart', dp(19))
         fav_b.bind(on_release=lambda *_: self.toggle_favorites())
         h.add_widget(fav_b)
         c.add_widget(h)
@@ -852,29 +958,21 @@ class Music(Base):
         mp.add_widget(top_row)
         bot_row = BoxLayout(size_hint_y=None, height=dp(32), padding=(dp(8), 0), spacing=dp(8))
         self._mp_prev = B(text='', size_hint_x=None, width=dp(34))
-        rr(self._mp_prev, SUR2, 9, BORDER); draw_icon(self._mp_prev, 'prev')
+        rr(self._mp_prev, SUR2, 17, BORDER)
+        btn_img(self._mp_prev, 'prev', dp(16))
         self._mp_prev.bind(on_release=lambda *_: self.manager.music_prev())
         bot_row.add_widget(self._mp_prev)
         self._mp_play = B(text='', size_hint_x=None, width=dp(38))
-        rr(self._mp_play, RED, 10); draw_icon(self._mp_play, 'pause')
+        rr(self._mp_play, RED, 19)
+        self._mp_play_img = btn_img(self._mp_play, 'pause', dp(18))
         self._mp_play.bind(on_release=lambda *_: self.manager.music_toggle())
         bot_row.add_widget(self._mp_play)
         self._mp_next = B(text='', size_hint_x=None, width=dp(34))
-        rr(self._mp_next, SUR2, 9, BORDER); draw_icon(self._mp_next, 'next')
+        rr(self._mp_next, SUR2, 17, BORDER)
+        btn_img(self._mp_next, 'next', dp(16))
         self._mp_next.bind(on_release=lambda *_: self.manager.music_next())
         bot_row.add_widget(self._mp_next)
-        self._mp_slider = Slider(min=0, max=1, value=0, size_hint_x=1)
-        self._mp_seeking = False
-        def _seek_start(*_):
-            self._mp_seeking = True
-        def _seek_end(*_):
-            self._mp_seeking = False
-            try:
-                self.manager.music_seek(self._mp_slider.value)
-            except Exception:
-                pass
-        self._mp_slider.bind(on_touch_down=_seek_start)
-        self._mp_slider.bind(on_touch_up=_seek_end)
+        self._mp_slider = SeekBar(on_seek=lambda v: self.manager.music_seek(v))
         bot_row.add_widget(self._mp_slider)
         self._mp_time = Label(text='', color=MUTED, font_size=sp(8),
                               size_hint_x=None, width=dp(66), halign='center')
@@ -884,7 +982,7 @@ class Music(Base):
 
     def show_mini_player(self, title, playing=True):
         self._mp_title.text = title
-        draw_icon(self._mp_play, 'pause' if playing else 'play')
+        set_icon(self._mp_play_img, 'pause' if playing else 'play')
         if not self._mp_visible:
             self._mp.opacity = 1
             self._mp_visible = True
@@ -1040,8 +1138,8 @@ class Music(Base):
             row = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(8), padding=(dp(6), dp(4)))
             rr(row, SUR, 12, BORDER)
             play_b = B(text='', size_hint_x=None, width=dp(38))
-            rr(play_b, SUR2, 10, BORDER)
-            draw_icon(play_b, 'play')
+            rr(play_b, SUR2, 19, BORDER)
+            btn_img(play_b, 'play', dp(16))
             play_b.bind(on_release=lambda *_i, it=item: mgr.music_queue_add(it))
             info = BoxLayout(orientation='vertical', spacing=dp(1))
             info.add_widget(Label(text=f'{idx+1}. {title}', color=WHITE, font_size=sp(10.5), bold=True, halign='left', valign='middle', text_size=(None, None)))
@@ -1854,30 +1952,39 @@ class M(ScreenManager):
             touch_layer.background_color=(0,0,0,0)
             root.add_widget(touch_layer)
 
-            top=BoxLayout(size_hint=(1,None),height=dp(36),spacing=dp(4),
-                          padding=(dp(6),dp(3)))
-            rr(top,(0,0,0,0.45),0)
-            tl=Label(text=title,color=WHITE,font_size=sp(10),bold=True,halign='left',valign='middle',
+            top=BoxLayout(size_hint=(1,None),height=dp(44),spacing=dp(10),
+                          padding=(dp(12),dp(5)))
+            rr(top,(0,0,0,0.50),0)
+            tl=Label(text=title,color=WHITE,font_size=sp(11),bold=True,halign='left',valign='middle',
                      shorten=True,shorten_from='right',text_size=(None,None))
             top.add_widget(tl)
-            qlabel=B(text='HD',size_hint_x=None,width=dp(32),font_size=sp(8))
-            rr(qlabel,SUR2,9,BORDER); draw_icon(qlabel,'quality')
-            speed=B(text='',size_hint_x=None,width=dp(32)); rr(speed,SUR2,9,BORDER); draw_icon(speed,'speed')
-            fsb=B(text='',size_hint_x=None,width=dp(32)); rr(fsb,SUR2,9,BORDER); draw_icon(fsb,'fs')
-            cb=B(text='',size_hint_x=None,width=dp(32)); rr(cb,RED,9); draw_icon(cb,'close')
+            qlabel=B(text='HD',font_size=sp(10),bold=True,color=WHITE,size_hint_x=None,width=dp(38)); rr(qlabel,(1,1,1,0.14),19,None)
+            speed=B(text='',size_hint_x=None,width=dp(38)); rr(speed,(1,1,1,0.14),19,None); btn_img(speed,'speed',dp(18))
+            fsb=B(text='',size_hint_x=None,width=dp(38)); rr(fsb,(1,1,1,0.14),19,None)
+            fsb_img=btn_img(fsb,'fs',dp(18))
+            cb=B(text='',size_hint_x=None,width=dp(38)); rr(cb,RED,19,None); btn_img(cb,'close',dp(17))
             top.add_widget(qlabel); top.add_widget(speed); top.add_widget(fsb); top.add_widget(cb)
             root.add_widget(top)
 
-            bottom=BoxLayout(size_hint=(1,None),height=dp(44),spacing=dp(4),
-                             padding=(dp(6),dp(3)))
-            rr(bottom,(0,0,0,0.45),0)
-            pb=B(text='',size_hint_x=None,width=dp(34)); rr(pb,SUR2,9,BORDER); draw_icon(pb,'pause')
-            prev=B(text='',size_hint_x=None,width=dp(30)); rr(prev,SUR2,9,BORDER); draw_icon(prev,'prev')
-            nxt=B(text='',size_hint_x=None,width=dp(30)); rr(nxt,SUR2,9,BORDER); draw_icon(nxt,'next')
-            sl=Slider(min=0,max=1,value=0,size_hint_x=1)
-            tml=Label(text='0:00 / 0:00',color=WHITE,font_size=sp(8),size_hint_x=None,width=dp(72))
-            ab=B(text='',size_hint_x=None,width=dp(30)); rr(ab,SUR2,9,BORDER); draw_icon(ab,'music')
-            qb=B(text='',size_hint_x=None,width=dp(30)); rr(qb,SUR2,9,BORDER); draw_icon(qb,'queue')
+            bottom=BoxLayout(size_hint=(1,None),height=dp(50),spacing=dp(10),
+                             padding=(dp(12),dp(6)))
+            rr(bottom,(0,0,0,0.50),0)
+            pb=B(text='',size_hint_x=None,width=dp(40)); rr(pb,(1,1,1,0.14),20,None)
+            pb_img=btn_img(pb,'pause',dp(19))
+            prev=B(text='',size_hint_x=None,width=dp(38)); rr(prev,(1,1,1,0.14),19,None); btn_img(prev,'prev',dp(17))
+            nxt=B(text='',size_hint_x=None,width=dp(38)); rr(nxt,(1,1,1,0.14),19,None); btn_img(nxt,'next',dp(17))
+
+            def _seek_video(val):
+                # val llega en SEGUNDOS (SeekBar set_range(dur))
+                try:
+                    if v.duration:
+                        v.seek(val)
+                except Exception:
+                    pass
+            sl=SeekBar(on_seek=_seek_video)
+            tml=Label(text='0:00 / 0:00',color=WHITE,font_size=sp(9),size_hint_x=None,width=dp(76))
+            ab=B(text='',size_hint_x=None,width=dp(38)); rr(ab,(1,1,1,0.14),19,None); btn_img(ab,'audio',dp(17))
+            qb=B(text='',size_hint_x=None,width=dp(38)); rr(qb,(1,1,1,0.14),19,None); btn_img(qb,'queue',dp(17))
             bottom.add_widget(pb); bottom.add_widget(prev); bottom.add_widget(nxt); bottom.add_widget(sl)
             bottom.add_widget(tml); bottom.add_widget(ab); bottom.add_widget(qb)
             root.add_widget(bottom)
@@ -1887,25 +1994,17 @@ class M(ScreenManager):
             root.add_widget(thin)
 
             def sync_player_layout(*_):
-                # CLAVE: el ModalView NO se redimensionaba al girar y dejaba los
-                # botones en coordenadas viejas (y el video fuera de pantalla al
-                # expandir). Ahora la capa se agrega directo a Window y se fuerza a
-                # Window.size; ademas las barras se posicionan DENTRO del area
-                # visible del video (rectangulo 16:9 centrado), para que los
-                # botones queden sobre el video y no lejos de el.
+                # Las barras de controles van SIEMPRE pegadas a los bordes de la
+                # ventana (ancho completo): en vertical no quedan apretadas dentro
+                # del video letterbox y en horizontal nada se corta fuera de pantalla.
                 try:
                     root.size=Window.size; root.pos=(0,0)
                     sw,sh=float(Window.size[0]),float(Window.size[1])
-                    ar=16.0/9.0
-                    if sw/sh>ar:
-                        vh=sh; vw=sh*ar; vx=(sw-vw)/2.0; vy=0.0
-                    else:
-                        vw=sw; vh=sw/ar; vx=0.0; vy=(sh-vh)/2.0
                     v.pos=(0,0); v.size=root.size
                     touch_layer.pos=(0,0); touch_layer.size=root.size
-                    top.pos=(vx, vy+vh-top.height); top.width=vw
-                    bottom.pos=(vx, vy); bottom.width=vw
-                    thin.pos=(vx, vy+vh-thin.height); thin.width=vw
+                    top.pos=(0, sh-top.height); top.width=sw
+                    bottom.pos=(0, 0); bottom.width=sw
+                    thin.pos=(0, sh-thin.height); thin.width=sw
                     land=sh<sw
                     if land!=state['land']:
                         state['land']=land
@@ -1981,25 +2080,24 @@ class M(ScreenManager):
                         except Exception as e:
                             self._info('Audio','No se pudo activar el modo audio.'); crashlog.write_log('Audio fallo: '+str(e)[:120])
                     v.opacity=0; state['mode']='audio'
-                    draw_icon(ab,'music')
                 else:
                     if state['sound'] is not None:
                         try: state['sound'].stop(); state['sound'].unload()
                         except Exception: pass
                         state['sound']=None
-                    v.opacity=1; state['mode']='video'; v.state='play'; draw_icon(ab,'music')
+                    v.opacity=1; state['mode']='video'; v.state='play'
                 show_controls()
             ab.bind(on_release=lambda *_:_set_mode('audio' if state['mode']!='audio' else 'video'))
 
             def toggle_play(*_):
                 if state['mode']=='audio' and state['sound'] is not None:
                     if getattr(state['sound'],'state','')=='playing':
-                        state['sound'].stop(); draw_icon(pb,'play')
+                        state['sound'].stop(); set_icon(pb_img,'play')
                     else:
-                        state['sound'].play(); draw_icon(pb,'pause')
+                        state['sound'].play(); set_icon(pb_img,'pause')
                 else:
-                    if v.state=='play': v.state='pause'; draw_icon(pb,'play')
-                    else: v.state='play'; draw_icon(pb,'pause')
+                    if v.state=='play': v.state='pause'; set_icon(pb_img,'play')
+                    else: v.state='play'; set_icon(pb_img,'pause')
                 show_controls()
             pb.bind(on_release=toggle_play)
 
@@ -2012,21 +2110,13 @@ class M(ScreenManager):
 
             prev.bind(on_release=lambda *_: self._info('Reproductor','El retroceso de video se controla con la barra de progreso.'))
 
-            def seek_start(*_): state['drag']=True; show_controls()
-            def seek_end(*_):
-                state['drag']=False
-                try:
-                    if v.duration: v.position=sl.value
-                except Exception: pass
-                show_controls()
-            sl.bind(on_touch_down=seek_start,on_touch_up=seek_end)
-
             qlabel.bind(on_release=lambda *_: self.open_play_quality(item or {}, lambda q:self._stream_switch(v,item,q,qlabel)))
             speed.bind(on_release=lambda *_: self._open_speed(v))
 
             def toggle_fs(*_):
                 state['fs'] = not state['fs']
                 state['manual_fs'] = state['fs']
+                set_icon(fsb_img, 'fs_exit' if state['fs'] else 'fs')
                 if state['fs']:
                     self._jni_fs(True)
                     self._jni_rotation(True)
@@ -2049,8 +2139,8 @@ class M(ScreenManager):
                     # el boton de pantalla completa.
                     sync_player_layout()
                     dur=v.duration or 0; pos=v.position or 0
-                    if not state['drag'] and dur:
-                        sl.max=dur; sl.value=pos
+                    if dur:
+                        sl.set_range(dur); sl.set_value(pos)
                     if dur:
                         fm=lambda x:f"{int(x//60)}:{int(x%60):02d}"
                         tml.text=f"{fm(pos)} / {fm(dur)}"; thin.value=min(1,max(0,pos/dur))
@@ -2680,14 +2770,15 @@ class M(ScreenManager):
             v = Video(source=path, state='play', volume=1, allow_stretch=True, keep_ratio=True,
                       size_hint=(1, 1), pos_hint={'x': 0, 'y': 0})
             root.add_widget(v)
-            top = BoxLayout(size_hint=(1, None), height=dp(36), spacing=dp(4), padding=(dp(4), dp(3)))
-            rr(top, (0, 0, 0, 0.45), 0)
-            tl = Label(text=title, color=WHITE, font_size=sp(10), bold=True,
+            top = BoxLayout(size_hint=(1, None), height=dp(44), spacing=dp(10), padding=(dp(12), dp(5)))
+            rr(top, (0, 0, 0, 0.50), 0)
+            tl = Label(text=title, color=WHITE, font_size=sp(11), bold=True,
                        halign='left', valign='middle', size_hint_x=1, text_size=(None, None))
             top.add_widget(tl)
-            fsb = B(text='', size_hint_x=None, width=dp(32)); rr(fsb, SUR2, 9, BORDER); draw_icon(fsb, 'fs')
-            ab = B(text='', size_hint_x=None, width=dp(32)); rr(ab, SUR2, 9, BORDER); draw_icon(ab, 'music')
-            cb = B(text='', size_hint_x=None, width=dp(32)); rr(cb, RED, 9); draw_icon(cb, 'close')
+            fsb = B(text='', size_hint_x=None, width=dp(38)); rr(fsb, (1, 1, 1, 0.14), 19, None)
+            fsb_img = btn_img(fsb, 'fs', dp(18))
+            ab = B(text='', size_hint_x=None, width=dp(38)); rr(ab, (1, 1, 1, 0.14), 19, None); btn_img(ab, 'audio', dp(17))
+            cb = B(text='', size_hint_x=None, width=dp(38)); rr(cb, RED, 19, None); btn_img(cb, 'close', dp(17))
             top.add_widget(fsb); top.add_widget(ab); top.add_widget(cb)
             root.add_widget(top)
             ascreen = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(24))
@@ -2703,32 +2794,34 @@ class M(ScreenManager):
             ascreen.pos_hint = {'x': 0, 'y': 0}
             ascreen.opacity = 0
             root.add_widget(ascreen)
-            ctrl = BoxLayout(size_hint=(1, None), height=dp(40), spacing=dp(4), padding=(dp(6), dp(3)))
-            rr(ctrl, (0, 0, 0, 0.45), 0)
-            pb = B(text='', size_hint_x=None, width=dp(34)); rr(pb, SUR2, 9, BORDER); draw_icon(pb, 'pause')
-            sl = Slider(min=0, max=1, value=0, size_hint_x=1)
-            tml = Label(text='0:00 / 0:00', color=MUTED, font_size=sp(8), size_hint_x=None, width=dp(72))
+            ctrl = BoxLayout(size_hint=(1, None), height=dp(50), spacing=dp(10), padding=(dp(12), dp(6)))
+            rr(ctrl, (0, 0, 0, 0.50), 0)
+            pb = B(text='', size_hint_x=None, width=dp(40)); rr(pb, (1, 1, 1, 0.14), 20, None)
+            pb_img = btn_img(pb, 'pause', dp(19))
+
+            def _seek_audio_file(val):
+                try:
+                    if v.duration:
+                        v.seek(val)
+                except Exception:
+                    pass
+            sl = SeekBar(on_seek=_seek_audio_file)
+            tml = Label(text='0:00 / 0:00', color=WHITE, font_size=sp(9), size_hint_x=None, width=dp(76))
             ctrl.add_widget(pb); ctrl.add_widget(sl); ctrl.add_widget(tml)
             root.add_widget(ctrl)
             self._last_dialog = None
             self._player_dialog = None
 
             def _relayout(*_):
-                # CLAVE: el ModalView NO se redimensionaba al girar (botones en
-                # coordenadas viejas, video fuera de pantalla al expandir). La capa
-                # se agrega directo a Window y las barras se posicionan DENTRO del
-                # area visible del video (rectangulo 16:9 centrado).
+                # Barras SIEMPRE pegadas a los bordes de la ventana (ancho
+                # completo): nada se corta en horizontal y en vertical no quedan
+                # apretadas dentro del video letterbox.
                 try:
                     root.size = Window.size; root.pos = (0, 0)
                     sw, sh = float(Window.size[0]), float(Window.size[1])
-                    ar = 16.0 / 9.0
-                    if sw / sh > ar:
-                        vh = sh; vw = sh * ar; vx = (sw - vw) / 2.0; vy = 0.0
-                    else:
-                        vw = sw; vh = sw / ar; vx = 0.0; vy = (sh - vh) / 2.0
                     v.pos = (0, 0); v.size = root.size
-                    top.pos = (vx, vy + vh - top.height); top.width = vw
-                    ctrl.pos = (vx, vy); ctrl.width = vw
+                    top.pos = (0, sh - top.height); top.width = sw
+                    ctrl.pos = (0, 0); ctrl.width = sw
                     ascreen.size = root.size; ascreen.pos = (0, 0)
                     land = sh < sw
                     if land != state['land']:
@@ -2801,7 +2894,6 @@ class M(ScreenManager):
                     v.opacity = 0
                     ascreen.opacity = 1
                     state['mode'] = 'audio'
-                    draw_icon(pb, 'pause')
                 else:
                     if state['sound'] is not None:
                         try:
@@ -2814,7 +2906,6 @@ class M(ScreenManager):
                     state['mode'] = 'video'
                     if v.state != 'play':
                         v.state = 'play'
-                    draw_icon(pb, 'pause')
             ab.bind(on_release=lambda *_: _set_mode('audio' if state['mode'] != 'audio' else 'video'))
 
             def _toggle_play(*_):
@@ -2822,19 +2913,20 @@ class M(ScreenManager):
                     s = state['sound']
                     if s is not None:
                         if getattr(s, 'state', '') == 'playing':
-                            s.stop(); draw_icon(pb, 'play')
+                            s.stop(); set_icon(pb_img, 'play')
                         else:
-                            s.play(); draw_icon(pb, 'pause')
+                            s.play(); set_icon(pb_img, 'pause')
                 else:
                     if v.state == 'play':
-                        v.state = 'pause'; draw_icon(pb, 'play')
+                        v.state = 'pause'; set_icon(pb_img, 'play')
                     else:
-                        v.state = 'play'; draw_icon(pb, 'pause')
+                        v.state = 'play'; set_icon(pb_img, 'pause')
             pb.bind(on_release=_toggle_play)
 
             def _toggle_fs(*_):
                 state['fs'] = not state['fs']
                 state['manual_fs'] = state['fs']
+                set_icon(fsb_img, 'fs_exit' if state['fs'] else 'fs')
                 self._jni_fs(state['fs'])
                 self._jni_rotation(state['fs'])
                 Clock.schedule_once(_relayout, 0.10)
@@ -2851,9 +2943,9 @@ class M(ScreenManager):
                     _relayout()
                     dur = v.duration or 0
                     pos = v.position or 0
-                    if not state['drag'] and dur:
-                        sl.max = dur
-                        sl.value = pos
+                    if dur:
+                        sl.set_range(dur)
+                        sl.set_value(pos)
                     if dur:
                         fm = lambda x: f"{int(x//60)}:{int(x%60):02d}"
                         tml.text = f"{fm(pos)} / {fm(dur)}"
@@ -2868,15 +2960,6 @@ class M(ScreenManager):
                 except Exception:
                     pass
             tick_ev = Clock.schedule_interval(_tick, 0.5)
-            def _drag_start(*_): state['drag'] = True
-            def _drag_end(*_):
-                state['drag'] = False
-                try:
-                    if v.duration:
-                        v.position = sl.value
-                except Exception:
-                    pass
-            sl.bind(on_touch_down=_drag_start, on_touch_up=_drag_end)
         except Exception as e:
             crashlog.write_log('Reproductor: error reproductor interno: ' + str(e)[:150] + '\n' + traceback.format_exc())
             self._info('Reproductor', 'No se pudo abrir el reproductor interno.')
@@ -3006,9 +3089,8 @@ class M(ScreenManager):
                 pos = snd.get_pos()
                 dur = snd.length if hasattr(snd, 'length') and snd.length else 0
                 if dur > 0 and screen._mp_slider is not None:
-                    screen._mp_slider.max = dur
-                    if not getattr(screen, '_mp_seeking', False):
-                        screen._mp_slider.value = pos
+                    screen._mp_slider.set_range(dur)
+                    screen._mp_slider.set_value(pos)
                 if screen._mp_time is not None:
                     fm = lambda x: "{}:{:02d}".format(int(x // 60), int(x % 60))
                     screen._mp_time.text = fm(pos) + ' / ' + (fm(dur) if dur else '0:00')
