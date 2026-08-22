@@ -27,6 +27,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
 from kivy.uix.image import Image, AsyncImage
+from kivy.core.image import Image as CoreImage
 from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
@@ -335,7 +336,7 @@ class ClickableBox(ButtonBehavior, BoxLayout):
 
 
 class SeekBar(Widget):
-    """Barra de progreso estilo profesional: track fino, relleno de color y
+    """Barra de progreso estilo profesional: track fino, relleno degradado y
     knob pequeno. Reemplaza al Slider nativo de Kivy (knob gigante azul)."""
     def __init__(self, on_seek=None, height_bar=None, **kw):
         super().__init__(**kw)
@@ -344,11 +345,21 @@ class SeekBar(Widget):
         self.value = 0.0
         self.dragging = False
         self.on_seek_cb = on_seek
+        try:
+            _tex = CoreImage(PICON + 'fill_grad.png').texture
+            _tex.wrap = 'clamp_to_edge'
+        except Exception:
+            _tex = None
+        self._grad_tex = _tex
         with self.canvas:
             Color(1, 1, 1, 0.22)
             self._track = RoundedRectangle(radius=[dp(2)])
-            Color(*RED)
-            self._fill = RoundedRectangle(radius=[dp(2)])
+            if _tex:
+                Color(1, 1, 1, 1)
+                self._fill = Rectangle(texture=_tex)
+            else:
+                Color(*RED)
+                self._fill = RoundedRectangle(radius=[dp(2)])
             Color(1, 1, 1, 0.95)
             self._knob = Ellipse()
         self.bind(pos=self._redraw, size=self._redraw)
@@ -963,8 +974,10 @@ class Music(Base):
         self._mp_prev.bind(on_release=lambda *_: self.manager.music_prev())
         bot_row.add_widget(self._mp_prev)
         self._mp_play = B(text='', size_hint_x=None, width=dp(38))
-        rr(self._mp_play, RED, 19)
-        self._mp_play_img = btn_img(self._mp_play, 'pause', dp(18))
+        self._mp_play.add_widget(Image(source=PICON + 'coin.png', size_hint=(None, None),
+                                       size=(dp(38), dp(38)), pos_hint={'center_x': .5, 'center_y': .5},
+                                       allow_stretch=True, keep_ratio=True))
+        self._mp_play_img = btn_img(self._mp_play, 'pause', dp(17))
         self._mp_play.bind(on_release=lambda *_: self.manager.music_toggle())
         bot_row.add_widget(self._mp_play)
         self._mp_next = B(text='', size_hint_x=None, width=dp(34))
@@ -1969,8 +1982,11 @@ class M(ScreenManager):
             bottom=BoxLayout(size_hint=(1,None),height=dp(50),spacing=dp(10),
                              padding=(dp(12),dp(6)))
             rr(bottom,(0,0,0,0.50),0)
-            pb=B(text='',size_hint_x=None,width=dp(40)); rr(pb,(1,1,1,0.14),20,None)
-            pb_img=btn_img(pb,'pause',dp(19))
+            pb=B(text='',size_hint_x=None,width=dp(40))
+            pb.add_widget(Image(source=PICON + 'coin.png', size_hint=(None, None),
+                                size=(dp(40), dp(40)), pos_hint={'center_x': .5, 'center_y': .5},
+                                allow_stretch=True, keep_ratio=True))
+            pb_img=btn_img(pb,'pause',dp(18))
             prev=B(text='',size_hint_x=None,width=dp(38)); rr(prev,(1,1,1,0.14),19,None); btn_img(prev,'prev',dp(17))
             nxt=B(text='',size_hint_x=None,width=dp(38)); rr(nxt,(1,1,1,0.14),19,None); btn_img(nxt,'next',dp(17))
 
@@ -2796,8 +2812,11 @@ class M(ScreenManager):
             root.add_widget(ascreen)
             ctrl = BoxLayout(size_hint=(1, None), height=dp(50), spacing=dp(10), padding=(dp(12), dp(6)))
             rr(ctrl, (0, 0, 0, 0.50), 0)
-            pb = B(text='', size_hint_x=None, width=dp(40)); rr(pb, (1, 1, 1, 0.14), 20, None)
-            pb_img = btn_img(pb, 'pause', dp(19))
+            pb = B(text='', size_hint_x=None, width=dp(40))
+            pb.add_widget(Image(source=PICON + 'coin.png', size_hint=(None, None),
+                                size=(dp(40), dp(40)), pos_hint={'center_x': .5, 'center_y': .5},
+                                allow_stretch=True, keep_ratio=True))
+            pb_img = btn_img(pb, 'pause', dp(18))
 
             def _seek_audio_file(val):
                 try:
