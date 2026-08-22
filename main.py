@@ -70,7 +70,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.6'
+APP_VERSION = '2.0.7'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 
@@ -3193,46 +3193,31 @@ class M(ScreenManager):
         if not IS_ANDROID:
             self._info('Instala el APK', 'Abri el archivo para instalar:\n' + apk_path)
             return
+        uri = None
+        try:
+            res = self._publish_to_downloads(apk_path, 'jonayodownloader-update.apk')
+            if res:
+                uri = res.get('uri')
+        except Exception as e:
+            crashlog.write_log('Error publicando APK: ' + str(e)[:200])
+        if not uri:
+            self._info('Instala el APK',
+                       'No se pudo preparar la instalacion automatica.\n'
+                       'Descargalo manual desde:\nhttps://github.com/jonayooficial/jonayodownloader-apk/releases')
+            return
         try:
             from jnius import autoclass
             Intent = autoclass('android.content.Intent')
             Uri = autoclass('android.net.Uri')
-            File = autoclass('java.io.File')
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            context = PythonActivity.mActivity.getApplicationContext()
-            pkg = context.getPackageName()
-            cache_dir = context.getCacheDir()
-            update_file = File(cache_dir, 'jonayodownloader-update.apk')
-            import shutil
-            shutil.copy2(apk_path, update_file.getAbsolutePath())
-            FileProvider = autoclass('androidx.core.content.FileProvider')
-            uri = FileProvider.getUriForFile(context, pkg + '.fileprovider', update_file)
             intent = Intent(Intent.ACTION_VIEW)
-            intent.setDataAndType(uri, 'application/vnd.android.package-archive')
+            intent.setDataAndType(Uri.parse(uri), 'application/vnd.android.package-archive')
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
                             Intent.FLAG_ACTIVITY_NEW_TASK)
             PythonActivity.mActivity.startActivity(intent)
         except Exception as e:
-            crashlog.write_log('Error instalador: ' + str(e)[:200])
-            try:
-                from jnius import autoclass
-                Intent = autoclass('android.content.Intent')
-                Uri = autoclass('android.net.Uri')
-                File = autoclass('java.io.File')
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                context = PythonActivity.mActivity.getApplicationContext()
-                cache_dir = context.getCacheDir()
-                update_file = File(cache_dir, 'jonayodownloader-update.apk')
-                import shutil
-                shutil.copy2(apk_path, update_file.getAbsolutePath())
-                uri = Uri.fromFile(update_file)
-                intent = Intent(Intent.ACTION_VIEW)
-                intent.setDataAndType(uri, 'application/vnd.android.package-archive')
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                PythonActivity.mActivity.startActivity(intent)
-            except Exception as e2:
-                crashlog.write_log('Error instalador fallback: ' + str(e2)[:200])
-                self._info('Instala el APK', 'Descargalo manual desde:\nhttps://github.com/jonayooficial/jonayodownloader-apk/releases')
+            crashlog.write_log('Error abriendo instalador: ' + str(e)[:200])
+            self._info('Instala el APK', 'Descargalo manual desde:\nhttps://github.com/jonayooficial/jonayodownloader-apk/releases')
 
     def show_video_menu(self, video):
         def copy_link():

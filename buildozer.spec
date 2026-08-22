@@ -6,7 +6,7 @@ package.domain = org.jonayo
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 
-version = 2.0.6
+version = 2.0.7
 version.release = 1
 
 # Requisitos. ffmpeg se compila desde la recipe local (6.1.2) de python-for-android
@@ -46,10 +46,6 @@ presplash.filename = presplash.png
 icon.filename = icon.png
 
 android.enable_androidx = True
-
-# FileProvider para instalar APKs via content:// (obligatorio Android 7+)
-android.resource_dir = res
-android.add_android_manifest_application_element = <provider android:name="androidx.core.content.FileProvider" android:authorities="org.jonayo.jonayodownloader2.fileprovider" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" /></provider>
 
 # Firma release: buildozer hace override de cada token si existe la env var
 # APP_ANDROID_KEYSTORE / APP_ANDROID_KEYALIAS / APP_ANDROID_STOREPASS / APP_ANDROID_KEYPASS,
