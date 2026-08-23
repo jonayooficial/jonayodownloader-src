@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.14'
+APP_VERSION = '2.0.15'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -693,7 +693,8 @@ class Home(Base):
         c.add_widget(Label(text='Buscar videos', color=WHITE, font_size=sp(23), bold=True,
                            size_hint_y=None, height=dp(38), halign='left'))
         search_wrap = BoxLayout(size_hint_y=None, height=dp(56), padding=(dp(14),0), spacing=dp(8))
-        search_wrap.add_widget(Image(source=icon('search'), size_hint=(None,None), size=(dp(22),dp(22)), keep_ratio=True))
+        search_wrap.add_widget(Image(source=icon('search'), size_hint=(None,None), size=(dp(22),dp(22)),
+                                     keep_ratio=True, pos_hint={'center_y': 0.5}))
         search = TextBox(hint_text='Buscar videos en YouTube...', draw_card=False, size_hint_y=1)
         search.bind(on_text_validate=lambda *_: self.manager.do_search(search.text)); self.search_field=search
         search_wrap.add_widget(search); rr(search_wrap, SUR2, 18, BORDER); c.add_widget(search_wrap)
@@ -1835,9 +1836,11 @@ class M(ScreenManager):
     def _apply_stream(self, v, item, stream, busy_label=None):
         try:
             pos=v.position or 0
+            if v.duration:
+                pos = max(0, min(pos, v.duration))
             v.state='stop'; v.source=''
             v.source=stream['url']; v.state='play'
-            if pos:
+            if pos and pos < 36000:
                 Clock.schedule_once(lambda dt,p=pos: setattr(v,'position',p),0.25)
             item['stream_url']=stream['url']; item['stream_quality']=stream['quality']
             if busy_label: busy_label.text=stream['quality']
@@ -2030,7 +2033,7 @@ class M(ScreenManager):
                 # SeekBar da segundos; Video.seek espera 0-1
                 try:
                     if v.duration:
-                        v.seek(val / v.duration)
+                        v.seek(max(0, min(val, v.duration)) / v.duration)
                 except Exception:
                     pass
             sl=SeekBar(on_seek=_seek_video)
@@ -2197,6 +2200,7 @@ class M(ScreenManager):
                     sync_player_layout()
                     dur=v.duration or 0; pos=v.position or 0
                     if dur:
+                        pos = max(0, min(pos, dur))
                         sl.set_range(dur); sl.set_value(pos)
                     if dur:
                         fm=lambda x:f"{int(x//60)}:{int(x%60):02d}"
@@ -2862,7 +2866,7 @@ class M(ScreenManager):
             def _seek_audio_file(val):
                 try:
                     if v.duration:
-                        v.seek(val / v.duration)
+                        v.seek(max(0, min(val, v.duration)) / v.duration)
                 except Exception:
                     pass
             sl = SeekBar(on_seek=_seek_audio_file)
@@ -3007,6 +3011,7 @@ class M(ScreenManager):
                     dur = v.duration or 0
                     pos = v.position or 0
                     if dur:
+                        pos = max(0, min(pos, dur))
                         sl.set_range(dur)
                         sl.set_value(pos)
                     if dur:
