@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.20'
+APP_VERSION = '2.0.21'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -798,8 +798,9 @@ class Options(Base):
         c=self.body; h=BoxLayout(size_hint_y=None,height=dp(48)); b=B(text='‹',font_size=sp(30),size_hint_x=None,width=dp(38)); b.bind(on_release=lambda *_: self.manager.go('home')); h.add_widget(b); h.add_widget(Label(text='Opciones de descarga',color=WHITE,font_size=sp(16),bold=True,halign='left')); c.add_widget(h)
         self.info_card=Card(size_hint_y=None,height=dp(106),orientation='horizontal',spacing=dp(10)); c.add_widget(self.info_card)
         c.add_widget(Label(text='Formato',color=WHITE,font_size=sp(15),bold=True,size_hint_y=None,height=dp(27),halign='left'))
-        f=Card(size_hint_y=None,height=dp(112),padding=dp(7)); self.btn_video=RadioRow('Video','Descarga el video con audio',True); self.btn_audio=RadioRow('Solo audio (MP3)','Descarga solo el audio del video',False); self.btn_video.bind(on_release=lambda *_:self.set_mode('video')); self.btn_audio.bind(on_release=lambda *_:self.set_mode('audio')); f.add_widget(self.btn_video); f.add_widget(self.btn_audio); c.add_widget(f)
-        c.add_widget(Label(text='Calidad de video',color=WHITE,font_size=sp(15),bold=True,size_hint_y=None,height=dp(27),halign='left'))
+        f=Card(size_hint_y=None,height=dp(112),padding=dp(7)); self.btn_video=RadioRow('Video','Descarga el video con audio',True); self.btn_audio=RadioRow('Solo audio (MP3)','Siempre con la mejor calidad',False); self.btn_video.bind(on_release=lambda *_:self.set_mode('video')); self.btn_audio.bind(on_release=lambda *_:self.set_mode('audio')); f.add_widget(self.btn_video); f.add_widget(self.btn_audio); c.add_widget(f)
+        self.q_label=Label(text='Calidad de video',color=WHITE,font_size=sp(15),bold=True,size_hint_y=None,height=dp(27),halign='left')
+        c.add_widget(self.q_label)
         q=Card(size_hint_y=None,height=dp(270),padding=dp(7)); self.quality_box=q; self.quality_btns={}
         self._build_quality_rows([('2160p','4K Ultra HD'),('1440p','2K QHD'),('1080p','Full HD · Recomendado'),('720p','HD'),('480p','SD'),('360p','SD'),('240p','Baja')])
         c.add_widget(q); d=B(text='Descargar',size_hint_y=None,height=dp(52),font_size=sp(14)); rr(d,RED,15); d.bind(on_release=lambda *_:self.manager.start_download()); c.add_widget(d)
@@ -830,9 +831,23 @@ class Options(Base):
         pairs = [(f'{h}p', names.get(h, '')) for h in hs]
         self._build_quality_rows(pairs)
     def set_video(self,video):
-        self.video=video; self.info_card.clear_widgets(); self.info_card.add_widget(Thumb(video.get('title',''),video.get('duration',''),video.get('color',0),video.get('thumb',''),width=126,height=78)); col=BoxLayout(orientation='vertical'); col.add_widget(Label(text=safe_text(video.get('title','Sin título'), 'Sin título'),color=WHITE,font_size=sp(11.5),bold=True,halign='left',valign='middle')); col.add_widget(Label(text=video.get('channel',''),color=MUTED,font_size=sp(9.5),halign='left')); col.add_widget(Label(text=video.get('duration',''),color=DIM,font_size=sp(9),halign='left')); self.info_card.add_widget(col)
+        self.video=video; self.info_card.clear_widgets(); self._info_thumb=Thumb(video.get('title',''),video.get('duration',''),video.get('color',0),video.get('thumb',''),width=126,height=78); self.info_card.add_widget(self._info_thumb); col=BoxLayout(orientation='vertical'); col.add_widget(Label(text=safe_text(video.get('title','Sin título'), 'Sin título'),color=WHITE,font_size=sp(11.5),bold=True,halign='left',valign='middle')); col.add_widget(Label(text=video.get('channel',''),color=MUTED,font_size=sp(9.5),halign='left')); col.add_widget(Label(text=video.get('duration',''),color=DIM,font_size=sp(9),halign='left')); self.info_card.add_widget(col)
     def set_mode(self,mode):
+        """video: muestra calidades y miniatura. audio (MP3): siempre la mejor
+        calidad posible -> se oculta la lista; solo nombre y canal."""
         self.mode=mode; self.btn_video.set_selected(mode=='video'); self.btn_audio.set_selected(mode=='audio')
+        vis = (mode == 'video')
+        try:
+            self.q_label.height = dp(27) if vis else 0
+            self.q_label.opacity = 1 if vis else 0
+            self.quality_box.height = (dp(14) + dp(52) * max(len(self.quality_btns), 1)) if vis else 0
+            self.quality_box.opacity = 1 if vis else 0
+            if getattr(self, '_info_thumb', None) is not None:
+                self._info_thumb.width = dp(126) if vis else 0
+                self._info_thumb.height = dp(78) if vis else 0
+                self._info_thumb.opacity = 1 if vis else 0
+        except Exception:
+            pass
     def set_quality(self,q):
         self.quality=q
         for x,b in self.quality_btns.items(): b.set_selected(x==q)
@@ -900,6 +915,24 @@ class Downloads(Base):
         for d in items:
             status=d.get('status',''); col=GREEN if status=='completado' else RED if status=='descargando' else ORANGE
             done = status=='completado'
+            if done and d.get('format')=='MP3':
+                # Musica descargada: fila compacta SIN miniatura (estilo lista de musica)
+                row=ClickableBox(bg=SUR,radius=14,border=BORDER,orientation='horizontal',
+                                 padding=(dp(10),dp(6)),spacing=dp(8),size_hint_y=None,height=dp(60))
+                pb=B(text='',size_hint_x=None,width=dp(40)); rr(pb,SUR2,20,BORDER)
+                btn_img(pb,'play',dp(18))
+                row.add_widget(pb)
+                x=BoxLayout(orientation='vertical',spacing=dp(1))
+                x.add_widget(Label(text=safe_text(d.get('title','')),color=WHITE,font_size=sp(10.5),bold=True,halign='left',valign='middle',size_hint_y=None,height=dp(24),text_size=(None,None),shorten=True,shorten_from='right'))
+                x.add_widget(Label(text='MP3 · '+safe_text(d.get('channel',''),'cancion'),color=MUTED,font_size=sp(8.8),halign='left'))
+                row.add_widget(x)
+                db=B(text='',size_hint_x=None,width=dp(40)); rr(db,(1,1,1,0.08),20,None)
+                btn_img(db,'close',dp(15))
+                db.bind(on_release=lambda *_,item=d:self.manager.delete_download(item))
+                row.add_widget(db)
+                row.bind(on_release=lambda *_,item=d:self.manager.play_download(item))
+                self.list_box.add_widget(row)
+                continue
             row=BoxLayout(orientation='vertical',spacing=dp(6),padding=dp(8),size_hint_y=None,height=dp(152 if done else 102))
             rr(row,SUR,18,BORDER)
             top=ClickableBox(bg=(0,0,0,0),radius=0,border=None,orientation='horizontal',spacing=dp(9),size_hint_y=None,height=dp(78))
@@ -1648,6 +1681,7 @@ class Settings(Base):
         self._row(c,'Descargar con datos móviles','Puede generar cargos adicionales',toggle=True)
         self._row(c,'Descargas simultáneas','3 descargas')
         self._row(c,'Tema','Oscuro')
+        self._row(c,'Seguir escuchando en segundo plano','La musica continua al salir de la app',toggle=True,default=getattr(self.manager,'bg_music',True),on_toggle=self._set_bg_music)
         self._section(c,'Notificaciones')
         self._row(c,'Notificaciones de descargas','Mostrar notificaciones de progreso',toggle=True,default=True)
         self._row(c,'Sonido al completar','Reproducir sonido al terminar',toggle=True,default=True)
@@ -1658,15 +1692,22 @@ class Settings(Base):
         self._row(c,'Compartir la app','',arrow=True)
         info=Card(size_hint_y=None,height=dp(88)); info.add_widget(Label(text=f'J Youtube Downloader\nVersión {APP_VERSION}\nCreada por Jonathan Fariña - Jonayo',color=MUTED,font_size=sp(9.5),halign='center',valign='middle')); c.add_widget(info)
     def _section(self,c,text): c.add_widget(Label(text=text,color=WHITE,font_size=sp(14),bold=True,size_hint_y=None,height=dp(27),halign='left'))
-    def _row(self,c,title,sub,action=None,toggle=False,default=False,arrow=False):
+    def _row(self,c,title,sub,action=None,toggle=False,default=False,arrow=False,on_toggle=None):
         r=Card(size_hint_y=None,height=dp(67),orientation='horizontal',spacing=dp(10),padding=(dp(12),dp(8)))
         x=BoxLayout(orientation='vertical'); x.add_widget(Label(text=title,color=WHITE,font_size=sp(10.5),bold=True,halign='left')); x.add_widget(Label(text=sub,color=MUTED,font_size=sp(8.5),halign='left')); r.add_widget(x)
         if toggle:
             sw=Toggle(default); r.add_widget(sw)
+            if on_toggle: sw.bind(on_release=lambda *_: on_toggle(sw.value))
         elif arrow or action:
             ar=B(text='›',color=MUTED,font_size=sp(22),size_hint_x=None,width=dp(30)); rr(ar, SUR2, 10, BORDER); r.add_widget(ar)
             if action: ar.bind(on_release=lambda *_: self._manager_action(action))
         c.add_widget(r)
+    def _set_bg_music(self,v):
+        try:
+            self.manager.bg_music=bool(v)
+            self.manager._save_app_setting('bg_music',bool(v))
+        except Exception:
+            pass
     def _manager_action(self,a):
         try:getattr(self.manager,a)()
         except Exception:pass
@@ -1751,6 +1792,9 @@ class M(ScreenManager):
         self._repeat = False
         self._favs_path = os.path.join(self._data_dir(), '.music_favs.json')
         self._music_favs = self._load_favs()
+        self._settings_path = os.path.join(self._data_dir(), '.app_settings.json')
+        self._app_settings = self._load_app_settings()
+        self.bg_music = bool(self._app_settings.get('bg_music', True))
 
         self.add_widget(Home(name='home'))
 
@@ -2267,7 +2311,9 @@ class M(ScreenManager):
         raise Exception('YouTube no devolvio un stream reproducible.')
 
     def _available_heights(self, url):
-        """Resoluciones de video realmente disponibles (cacheado). Hilo."""
+        """Resoluciones de VIDEO realmente disponibles (cacheado). Hilo.
+        Ignora formatos de solo-audio: los HLS de audio reportan alturas
+        falsas (27p/45p/90p) que confundian al menu de calidades."""
         key = ('heights', url)
         c = self._stream_cache.get(key)
         if c is not None:
@@ -2277,16 +2323,19 @@ class M(ScreenManager):
             'quiet': True, 'no_warnings': True, 'noplaylist': True,
             'skip_download': True, 'nocheckcertificate': True,
             'socket_timeout': 15, 'check_formats': False,
-            'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
+            'extractor_args': {'youtube': {'player_client': ['tv', 'android', 'ios']}},
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
         hs = set()
         for f in (info.get('formats') or []):
             h = f.get('height')
-            if h:
+            vc = str(f.get('vcodec') or 'none')
+            if h and vc != 'none':
                 try:
-                    hs.add(int(h))
+                    h = int(h)
+                    if h >= 144:
+                        hs.add(h)
                 except Exception:
                     pass
         out = sorted(hs, reverse=True)
@@ -2831,7 +2880,7 @@ class M(ScreenManager):
                 'skip_download': True, 'nocheckcertificate': True,
                 'socket_timeout': 15, 'extract_flat': False,
                 'check_formats': False,
-                'extractor_args': {'youtube': {'player_client': ['android', 'ios'], 'player_skip': ['webpage']}},
+                'extractor_args': {'youtube': {'player_client': ['tv', 'android', 'ios'], 'player_skip': ['webpage']}},
             }
             with yt_dlp.YoutubeDL(opts) as ydl:
                 Clock.schedule_once(lambda dt: analyze.set_step(1))
@@ -2841,7 +2890,14 @@ class M(ScreenManager):
             video = self._to_video(info, 0)
             video['url'] = info.get('webpage_url') or url
             try:
-                hs = {int(f['height']) for f in (info.get('formats') or []) if f.get('height')}
+                hs = set()
+                for f in (info.get('formats') or []):
+                    h = f.get('height')
+                    vc = str(f.get('vcodec') or 'none')
+                    if h and vc != 'none':
+                        h = int(h)
+                        if h >= 144:
+                            hs.add(h)
                 video['_heights'] = sorted(hs, reverse=True)
             except Exception:
                 video['_heights'] = []
@@ -3938,6 +3994,23 @@ class M(ScreenManager):
         except Exception:
             return []
 
+    def _load_app_settings(self):
+        try:
+            import json
+            with open(self._settings_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_app_setting(self, key, val):
+        try:
+            self._app_settings[key] = val
+            import json
+            with open(self._settings_path, 'w', encoding='utf-8') as f:
+                json.dump(self._app_settings, f)
+        except Exception as e:
+            crashlog.write_log('Error guardando ajuste: ' + str(e)[:120])
+
     def _save_favs(self):
         try:
             import json
@@ -4405,6 +4478,23 @@ class AppMain(App):
             webbrowser.open('https://t.me/Jonayogoth?text=' + encoded)
         except Exception:
             webbrowser.open('https://t.me/Jonayogoth?text=' + encoded)
+
+    def on_pause(self):
+        """HOME o cambiar de app. Con 'Seguir escuchando' activado la app queda
+        residente y la musica sigue sonando. Si esta desactivado, se detiene
+        la musica y la app se cierra (comportamiento clasico)."""
+        try:
+            m = self.manager
+            if getattr(m, 'bg_music', True):
+                return True
+            if m._music_sound is not None:
+                m.music_stop()
+        except Exception:
+            pass
+        return False
+
+    def on_resume(self):
+        pass
 
     def on_stop(self):
         crashlog.write_log('App detenida.')
