@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.13'
+APP_VERSION = '2.0.14'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -375,20 +375,20 @@ class SeekBar(Widget):
             _tex = None
         self._grad_tex = _tex
         with self.canvas:
-            Color(1, 1, 1, 0.22)
-            self._track = RoundedRectangle(radius=[dp(2)])
+            Color(1, 1, 1, 0.35)
+            self._track = RoundedRectangle(radius=[dp(3)])
             if _tex:
                 Color(1, 1, 1, 1)
                 self._fill = Rectangle(texture=_tex)
             else:
                 Color(*RED)
-                self._fill = RoundedRectangle(radius=[dp(2)])
+                self._fill = RoundedRectangle(radius=[dp(3)])
             Color(1, 1, 1, 0.95)
             self._knob = Ellipse()
         self.bind(pos=self._redraw, size=self._redraw)
 
     def _knob_r(self):
-        return dp(7) if not self.dragging else dp(9)
+        return dp(8) if not self.dragging else dp(10)
 
     def _x_for(self, v):
         span = max(self.vmax - self.vmin, 1e-6)
@@ -403,7 +403,7 @@ class SeekBar(Widget):
         return self.vmin + t * (self.vmax - self.vmin)
 
     def _redraw(self, *_):
-        h = dp(4)
+        h = dp(6)
         cy = self.center_y
         k = self._knob_r()
         self._track.pos = (self.x, cy - h / 2)
@@ -460,7 +460,8 @@ class IconTextButton(ClickableBox):
         super().__init__(bg=RED if active else SUR2, radius=22, border=None if active else BORDER,
                          orientation='horizontal', spacing=dp(6), padding=(dp(10), 0), **kw)
         if icon_name:
-            self.add_widget(Image(source=icon(icon_name), size_hint=(None, None), size=(dp(icon_size), dp(icon_size)), keep_ratio=True))
+            self.add_widget(Image(source=icon(icon_name), size_hint=(None, None), size=(dp(icon_size), dp(icon_size)),
+                                  keep_ratio=True, pos_hint={'center_y': 0.5}))
         label = Label(text=safe_text(text), color=WHITE if active else MUTED, font_size=sp(font), bold=True,
                       halign='center', valign='middle', size_hint_x=1, shorten=True, shorten_from='right')
         def _fit(*_):
@@ -473,9 +474,10 @@ class NavItem(ClickableBox):
     def __init__(self, icon_name, text, active=False, on_release_cb=None, **kw):
         super().__init__(bg=(0,0,0,0), border=None, orientation='vertical', spacing=dp(1), padding=(0, dp(3)),
                          **kw)
-        self.add_widget(Image(source=icon(icon_name), size_hint_y=None, height=dp(27), keep_ratio=True))
+        self.add_widget(Image(source=icon(icon_name), size_hint=(None, None), size=(dp(26), dp(26)),
+                              keep_ratio=True, pos_hint={'center_x': 0.5}))
         self.add_widget(Label(text=safe_text(text), color=RED if active else MUTED, font_size=sp(9.8), bold=True,
-                              size_hint_y=None, height=dp(22), halign='center', valign='middle', text_size=(None, None)))
+                               size_hint_y=None, height=dp(22), halign='center', valign='middle', text_size=(None, None)))
         if on_release_cb:
             self.bind(on_release=lambda *_: on_release_cb())
 
@@ -2000,7 +2002,8 @@ class M(ScreenManager):
                           padding=(dp(12),dp(5)))
             rr(top,(0,0,0,0.50),0)
             tl=Label(text=title,color=WHITE,font_size=sp(11),bold=True,halign='left',valign='middle',
-                     shorten=True,shorten_from='right',text_size=(None,None))
+                     shorten=True,shorten_from='right',text_size=(None,None),size_hint_x=1)
+            tl.bind(width=lambda *_: setattr(tl, 'text_size', (tl.width, None)))
             top.add_widget(tl)
             qlabel=B(text='HD',font_size=sp(10),bold=True,color=WHITE,size_hint_x=None,width=dp(38)); rr(qlabel,(1,1,1,0.14),19,None)
             speed=B(text='',size_hint_x=None,width=dp(38)); rr(speed,(1,1,1,0.14),19,None); btn_img(speed,'speed',dp(18))
@@ -2018,12 +2021,16 @@ class M(ScreenManager):
             pb_img=btn_img(pb,'pause',dp(18))
             prev=B(text='',size_hint_x=None,width=dp(38)); rr(prev,(1,1,1,0.14),19,None); btn_img(prev,'prev',dp(17))
             nxt=B(text='',size_hint_x=None,width=dp(38)); rr(nxt,(1,1,1,0.14),19,None); btn_img(nxt,'next',dp(17))
+            # Solo mostrar prev/next si es playlist (mas de 1 en cola)
+            if len(getattr(self, 'play_queue', [])) <= 1:
+                for w in (prev, nxt):
+                    w.opacity = 0; w.disabled = True; w.width = dp(0)
 
             def _seek_video(val):
-                # val llega en SEGUNDOS (SeekBar set_range(dur))
+                # SeekBar da segundos; Video.seek espera 0-1
                 try:
                     if v.duration:
-                        v.seek(val)
+                        v.seek(val / v.duration)
                 except Exception:
                     pass
             sl=SeekBar(on_seek=_seek_video)
@@ -2039,17 +2046,22 @@ class M(ScreenManager):
             root.add_widget(thin)
 
             def sync_player_layout(*_):
-                # Las barras de controles van SIEMPRE pegadas a los bordes de la
-                # ventana (ancho completo): en vertical no quedan apretadas dentro
-                # del video letterbox y en horizontal nada se corta fuera de pantalla.
+                # Controles pegados al rect del video (16:9 centrado): en vertical
+                # quedan sobre el video, no en franjas negras; en horizontal el
+                # rect es ventana completa y nada se corta.
                 try:
                     root.size=Window.size; root.pos=(0,0)
                     sw,sh=float(Window.size[0]),float(Window.size[1])
-                    v.pos=(0,0); v.size=root.size
-                    touch_layer.pos=(0,0); touch_layer.size=root.size
-                    top.pos=(0, sh-top.height); top.width=sw
-                    bottom.pos=(0, 0); bottom.width=sw
-                    thin.pos=(0, sh-thin.height); thin.width=sw
+                    ar=16.0/9.0
+                    if sw/sh > ar:
+                        vh=sh; vw=sh*ar; vx=(sw-vw)/2; vy=0
+                    else:
+                        vw=sw; vh=sw/ar; vx=0; vy=(sh-vh)/2
+                    v.pos=(vx,vy); v.size=(vw,vh)
+                    touch_layer.pos=(vx,vy); touch_layer.size=(vw,vh)
+                    top.pos=(vx, vy+vh-top.height); top.width=vw
+                    bottom.pos=(vx, vy); bottom.width=vw
+                    thin.pos=(vx, vy+vh-thin.height); thin.width=vw
                     land=sh<sw
                     if land!=state['land']:
                         state['land']=land
@@ -2261,6 +2273,8 @@ class M(ScreenManager):
                 'quiet': True, 'no_warnings': True, 'noplaylist': True,
                 'skip_download': True, 'nocheckcertificate': True,
                 'socket_timeout': 15, 'extract_flat': False,
+                'check_formats': False,
+                'extractor_args': {'youtube': {'player_client': ['android'], 'player_skip': ['webpage']}},
             }
             with yt_dlp.YoutubeDL(opts) as ydl:
                 Clock.schedule_once(lambda dt: analyze.set_step(1))
@@ -2848,7 +2862,7 @@ class M(ScreenManager):
             def _seek_audio_file(val):
                 try:
                     if v.duration:
-                        v.seek(val)
+                        v.seek(val / v.duration)
                 except Exception:
                     pass
             sl = SeekBar(on_seek=_seek_audio_file)
@@ -2859,15 +2873,18 @@ class M(ScreenManager):
             self._player_dialog = None
 
             def _relayout(*_):
-                # Barras SIEMPRE pegadas a los bordes de la ventana (ancho
-                # completo): nada se corta en horizontal y en vertical no quedan
-                # apretadas dentro del video letterbox.
+                # Controles pegados al rect del video (16:9 centrado)
                 try:
                     root.size = Window.size; root.pos = (0, 0)
                     sw, sh = float(Window.size[0]), float(Window.size[1])
-                    v.pos = (0, 0); v.size = root.size
-                    top.pos = (0, sh - top.height); top.width = sw
-                    ctrl.pos = (0, 0); ctrl.width = sw
+                    ar = 16.0 / 9.0
+                    if sw / sh > ar:
+                        vh = sh; vw = sh * ar; vx = (sw - vw) / 2; vy = 0
+                    else:
+                        vw = sw; vh = sw / ar; vx = 0; vy = (sh - vh) / 2
+                    v.pos = (vx, vy); v.size = (vw, vh)
+                    top.pos = (vx, vy + vh - top.height); top.width = vw
+                    ctrl.pos = (vx, vy); ctrl.width = vw
                     ascreen.size = root.size; ascreen.pos = (0, 0)
                     land = sh < sw
                     if land != state['land']:
