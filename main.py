@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.16'
+APP_VERSION = '2.0.17'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -954,6 +954,7 @@ class Music(Base):
         self._preview = None
         self._mp_visible = False
         self._view_mode = 'local'
+        self._player = None
         self.build(); self.add_widget(self.make())
         self._build_mini_player()
 
@@ -969,7 +970,7 @@ class Music(Base):
         fav_b = B(text='', size_hint_x=None, width=dp(38))
         rr(fav_b, SUR2, 10, BORDER)
         btn_img(fav_b, 'heart', dp(19))
-        fav_b.bind(on_release=lambda *_: self.toggle_favorites())
+        fav_b.bind(on_release=lambda *_: self.manager.go('favs'))
         h.add_widget(fav_b)
         c.add_widget(h)
         q = TextBox(hint_text='Buscar canciones...', size_hint_y=None, height=dp(48))
@@ -991,7 +992,7 @@ class Music(Base):
         self._mp_title = Label(text='', color=WHITE, font_size=sp(10), bold=True,
                                halign='left', valign='middle', shorten=True)
         self._mp_title_wrap.add_widget(self._mp_title)
-        self._mp_title_wrap.bind(on_release=lambda *_: self.show_queue())
+        self._mp_title_wrap.bind(on_release=lambda *_: self.show_player())
         top_row.add_widget(self._mp_title_wrap)
         close_b = B(text='', size_hint_x=None, width=dp(32))
         rr(close_b, (1, 1, 1, 0.10), 16, None)
@@ -1034,6 +1035,241 @@ class Music(Base):
         self._mp.opacity = 0
         self._mp_visible = False
 
+    # ─── PLAYER EXPANDIDO ─────────────────────────────────────
+    @staticmethod
+    def _vid_of(item):
+        vid = item.get('id') or ''
+        if not vid:
+            url = item.get('url') or ''
+            if 'v=' in url:
+                vid = url.split('v=')[1].split('&')[0]
+        return vid
+
+    def _cur_item(self):
+        mgr = self.manager
+        q = getattr(mgr, '_music_queue', [])
+        cur = getattr(mgr, '_music_idx', -1)
+        return dict(q[cur]) if 0 <= cur < len(q) else {}
+
+    def close_player(self):
+        if self._player is not None:
+            try:
+                self._player.dismiss()
+            except Exception:
+                pass
+            self._player = None
+
+    def show_player(self):
+        """Reproductor a pantalla completa: portada grande, seek, controles
+        prev/play/next/shuffle/repeat, favoritos y cola 'A continuacion'."""
+        mgr = self.manager
+        if getattr(mgr, '_music_idx', -1) < 0 and not getattr(mgr, '_music_queue', []):
+            self.show_queue()
+            return
+        self.close_player()
+
+        root = TouchBlockingFloatLayout()
+        panel = BoxLayout(orientation='vertical', size_hint=(None, None),
+                          padding=(dp(16), dp(12)), spacing=dp(6))
+
+        def _relayout(*_):
+            from kivy.core.window import Window
+            panel.width = Window.width - dp(20)
+            panel.height = min(Window.height - dp(24), dp(560))
+            panel.pos = (dp(10), (Window.height - panel.height) / 2)
+        rr(panel, (0.05, 0.06, 0.09, 0.98), 22)
+        self._player = PlayerOverlay(root, _relayout)
+
+        top = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(6))
+        back_b = B(text='', size_hint_x=None, width=dp(38))
+        rr(back_b, SUR2, 19, BORDER)
+        btn_img(back_b, 'close', dp(15))
+        back_b.bind(on_release=lambda *_: self.close_player())
+        top.add_widget(back_b)
+        top.add_widget(Label(text='Reproduciendo', color=MUTED, font_size=sp(11), halign='left'))
+        heart_b = B(text='', size_hint_x=None, width=dp(38))
+        rr(heart_b, SUR2, 19, BORDER)
+        btn_img(heart_b, 'heart', dp(19))
+        heart_b.bind(on_release=lambda *_: self._player_fav())
+        top.add_widget(heart_b)
+        panel.add_widget(top)
+
+        cover_wrap = BoxLayout(size_hint_y=None, height=dp(170))
+        cardc = Card()
+        self._pl_cover = AsyncImage(size_hint=(1, 1), allow_stretch=True, keep_ratio=True,
+                                    nocache=True)
+        cardc.add_widget(self._pl_cover)
+        cover_wrap.add_widget(cardc)
+        panel.add_widget(cover_wrap)
+
+        self._pl_title = Label(text='', color=WHITE, font_size=sp(13), bold=True,
+                               halign='center', valign='middle', text_size=(None, None),
+                               size_hint_y=None, height=dp(28), shorten=True,
+                               shorten_from='right')
+        panel.add_widget(self._pl_title)
+        self._pl_channel = Label(text='', color=MUTED, font_size=sp(9.5),
+                                 halign='center', valign='middle',
+                                 size_hint_y=None, height=dp(18), shorten=True)
+        panel.add_widget(self._pl_channel)
+
+        seek_row = BoxLayout(size_hint_y=None, height=dp(26), spacing=dp(8))
+        self._pl_t1 = Label(text='0:00', color=MUTED, font_size=sp(9),
+                            size_hint_x=None, width=dp(38), halign='center')
+        seek_row.add_widget(self._pl_t1)
+        self._pl_slider = SeekBar(on_seek=lambda v: mgr.music_seek(v))
+        seek_row.add_widget(self._pl_slider)
+        self._pl_t2 = Label(text='0:00', color=MUTED, font_size=sp(9),
+                            size_hint_x=None, width=dp(38), halign='center')
+        seek_row.add_widget(self._pl_t2)
+        panel.add_widget(seek_row)
+
+        ctr = BoxLayout(size_hint_y=None, height=dp(74), spacing=dp(10), padding=(dp(18), 0))
+        self._pl_shuffle = B(text='', size_hint_x=None, width=dp(44))
+        btn_img(self._pl_shuffle, 'shuffle', dp(21))
+
+        def _tog_shuffle(*_):
+            st = mgr.music_shuffle_toggle()
+            self._pl_shuffle.opacity = 1 if st else 0.35
+        self._pl_shuffle.bind(on_release=_tog_shuffle)
+        ctr.add_widget(self._pl_shuffle)
+        prevb = B(text='', size_hint_x=None, width=dp(48))
+        rr(prevb, SUR2, 24, BORDER)
+        btn_img(prevb, 'prev', dp(22))
+        prevb.bind(on_release=lambda *_: mgr.music_prev())
+        ctr.add_widget(prevb)
+        playb = B(text='', size_hint_x=None, width=dp(70))
+        coin_bg(playb, dp(70))
+        self._pl_play_img = btn_img(playb, 'pause', dp(30))
+        playb.bind(on_release=lambda *_: mgr.music_toggle())
+        ctr.add_widget(playb)
+        nextb = B(text='', size_hint_x=None, width=dp(48))
+        rr(nextb, SUR2, 24, BORDER)
+        btn_img(nextb, 'next', dp(22))
+        nextb.bind(on_release=lambda *_: mgr.music_next())
+        ctr.add_widget(nextb)
+        self._pl_repeat = B(text='', size_hint_x=None, width=dp(44))
+        btn_img(self._pl_repeat, 'repeat', dp(21))
+
+        def _tog_repeat(*_):
+            st = mgr.music_repeat_toggle()
+            self._pl_repeat.opacity = 1 if st else 0.35
+        self._pl_repeat.bind(on_release=_tog_repeat)
+        ctr.add_widget(self._pl_repeat)
+        panel.add_widget(ctr)
+
+        qhead = BoxLayout(size_hint_y=None, height=dp(30), padding=(dp(4), 0), spacing=dp(6))
+        qhead.add_widget(Label(text='A continuacion (%d)' % len(getattr(mgr, '_music_queue', [])),
+                               color=WHITE, font_size=sp(11), bold=True, halign='left'))
+        qb = B(text='', size_hint_x=None, width=dp(36))
+        rr(qb, SUR2, 18, BORDER)
+        btn_img(qb, 'queue', dp(16))
+        qb.bind(on_release=lambda *_: self.show_queue())
+        qhead.add_widget(qb)
+        panel.add_widget(qhead)
+
+        sv = ScrollView(do_scroll_x=False, bar_width=0)
+        box = BoxLayout(orientation='vertical', spacing=dp(4), size_hint_y=None)
+        box.bind(minimum_height=box.setter('height'))
+        sv.add_widget(box)
+        panel.add_widget(sv)
+        self._pl_box = box
+
+        root.add_widget(panel)
+
+        item = self._cur_item()
+        vid = self._vid_of(item)
+        if vid:
+            self._pl_cover.source = mgr._thumb_path('https://i.ytimg.com/vi/%s/mqdefault.jpg' % vid)
+            self._pl_cover.opacity = 1
+        else:
+            self._pl_cover.source = ''
+            self._pl_cover.opacity = 0
+        self._pl_title.text = safe_text(item.get('title', ''), 'Sin titulo')
+        self._pl_channel.text = safe_text(item.get('channel', ''), '')
+        set_icon(self._pl_play_img, 'pause' if getattr(mgr, '_music_playing', False) else 'play')
+        self._pl_shuffle.opacity = 1 if getattr(mgr, '_shuffle', False) else 0.35
+        self._pl_repeat.opacity = 1 if getattr(mgr, '_repeat', False) else 0.35
+        self._fill_pl_queue()
+        try:
+            snd = mgr._music_sound
+            pos = snd.get_pos() if snd else 0
+            dur = (snd.length if hasattr(snd, 'length') and snd.length else 0) if snd else 0
+            fm = lambda x: "{}:{:02d}".format(int(x // 60), int(x % 60))
+            self._pl_t1.text = fm(pos)
+            self._pl_t2.text = fm(dur) if dur else '0:00'
+            self._pl_slider.set_range(dur or 1)
+            self._pl_slider.set_value(pos)
+        except Exception:
+            pass
+        self._player.open()
+
+    def _fill_pl_queue(self):
+        box = self._pl_box
+        box.clear_widgets()
+        mgr = self.manager
+        q = getattr(mgr, '_music_queue', [])
+        cur = getattr(mgr, '_music_idx', -1)
+        if not q:
+            box.add_widget(Label(text='La cola esta vacia.', color=DIM,
+                                 size_hint_y=None, height=dp(40)))
+            return
+        for i, it in enumerate(q):
+            active = (i == cur)
+            es_sig = (i == cur + 1)
+            rowb = ClickableBox(bg=RED if (active or es_sig) else SUR, radius=10,
+                                border=None if (active or es_sig) else BORDER,
+                                orientation='horizontal', padding=(dp(8), 0),
+                                spacing=dp(4), size_hint_y=None, height=dp(40))
+            tag = 'SONANDO' if active else ('SIGUIENTE' if es_sig else str(i + 1))
+            rowb.add_widget(Label(text=tag, color=(1, 1, 1, 1) if (active or es_sig) else MUTED,
+                                  font_size=sp(7.5) if (active or es_sig) else sp(9),
+                                  bold=True, size_hint_x=None, width=dp(62)))
+            rowb.add_widget(Label(text=safe_text(it.get('title', ''), 'Sin titulo'),
+                                  color=(1, 1, 1, 1) if (active or es_sig) else MUTED,
+                                  font_size=sp(9.3), shorten=True, shorten_from='right'))
+            rowb.bind(on_release=lambda *_, idx=i: self._jump_and_refresh(idx))
+            box.add_widget(rowb)
+
+    def _jump_and_refresh(self, idx):
+        self.manager.music_jump(idx)
+        Clock.schedule_once(lambda dt: self.sync_player_track(), 0.2)
+
+    def sync_player_track(self):
+        """Refresca portada/titulo/cola del player expandido si esta abierto."""
+        ov = self._player
+        if ov is None or not getattr(ov, '_opened', False):
+            return
+        mgr = self.manager
+        item = self._cur_item()
+        vid = self._vid_of(item)
+        if vid:
+            self._pl_cover.source = mgr._thumb_path('https://i.ytimg.com/vi/%s/mqdefault.jpg' % vid)
+            self._pl_cover.opacity = 1
+        else:
+            self._pl_cover.source = ''
+            self._pl_cover.opacity = 0
+        self._pl_title.text = safe_text(item.get('title', ''), 'Sin titulo')
+        self._pl_channel.text = safe_text(item.get('channel', ''), '')
+        set_icon(self._pl_play_img, 'pause' if mgr._music_playing else 'play')
+        self._fill_pl_queue()
+
+    def update_player_tick(self, pos, dur):
+        """Sincroniza mini y expanded con el tick del manager."""
+        ov = self._player
+        if ov is not None and getattr(ov, '_opened', False):
+            fm = lambda x: "{}:{:02d}".format(int(x // 60), int(x % 60))
+            self._pl_slider.set_range(dur or 1)
+            self._pl_slider.set_value(pos)
+            self._pl_t1.text = fm(pos)
+            self._pl_t2.text = fm(dur) if dur else '0:00'
+            set_icon(self._pl_play_img, 'pause' if self.manager._music_playing else 'play')
+
+    def _player_fav(self):
+        item = self._cur_item()
+        if item:
+            self.manager.music_fav_toggle(item)
+
+
     def set_query(self, q):
         self.query_field.text = q
         self.stop_preview()
@@ -1042,30 +1278,11 @@ class Music(Base):
         self.results_box.add_widget(Label(text='Buscando...', color=DIM, size_hint_y=None, height=dp(50)))
 
     def toggle_favorites(self):
-        if self._view_mode == 'favs':
-            self._view_mode = 'local'
-            self.on_pre_enter()
-        else:
-            self.show_favorites()
+        self.manager.go('favs')
 
     def show_favorites(self):
-        self.stop_preview()
-        self._view_mode = 'favs'
-        favs = getattr(self.manager, '_music_favs', [])
-        self.results_box.clear_widgets()
-        head = Label(text='Favoritos (%d)' % len(favs), color=MUTED, font_size=sp(10),
-                     size_hint_y=None, height=dp(24), halign='left')
-        self.results_box.add_widget(head)
-        if not favs:
-            self.results_box.add_widget(Label(
-                text='Sin favoritos.\nManten presionada una cancion\ny elegi "Agregar a favoritos".',
-                color=DIM, size_hint_y=None, height=dp(80), halign='center'))
-            return
-        for idx, it in enumerate(favs):
-            it['idx'] = idx + 1
-            row = MusicRow(dict(it))
-            row.manager = self.manager
-            self.results_box.add_widget(row)
+        """Compatibilidad: ahora los favoritos viven en la pantalla 'favs'."""
+        self.manager.go('favs')
 
     def show_queue(self):
         """Modal con la cola de reproduccion; tocar un item salta a ese track."""
@@ -1194,6 +1411,188 @@ class Music(Base):
             self.results_box.add_widget(row)
 
 
+class MusicFavs(Base):
+    """Pantalla dedicada de Favoritos: pestanas Canciones/Artistas/Albumes/
+    Playlists con contadores, buscador y tarjetas por artista."""
+    TABS = [('canciones', 'Canciones'), ('artistas', 'Artistas'),
+            ('albumes', 'Albumes'), ('playlists', 'Playlists')]
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.content = ScrollView(do_scroll_x=False, bar_width=0)
+        body = BoxLayout(orientation='vertical', padding=(dp(14), dp(10)), spacing=dp(9), size_hint_y=None)
+        body.bind(minimum_height=body.setter('height')); self.body = body; self.content.add_widget(body)
+        self._tab = 'canciones'
+        self._artist_filter = None
+        self._search_q = ''
+        self._tab_btns = {}
+        self.build(); self.add_widget(self.make())
+
+    def build(self):
+        c = self.body
+        h = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(6))
+        b = B(text='', size_hint_x=None, width=dp(38))
+        rr(b, SUR2, 10, BORDER)
+        btn_img(b, 'back', dp(18))
+        b.bind(on_release=lambda *_: self.manager.go_back())
+        h.add_widget(b)
+        h.add_widget(Label(text='Favoritos', color=WHITE, font_size=sp(16), bold=True, halign='left'))
+        c.add_widget(h)
+
+        tabs = BoxLayout(size_hint_y=None, height=dp(42), spacing=dp(6))
+        for key, label in self.TABS:
+            bt = B(text=label, size_hint_x=1, font_size=sp(9.3))
+            rr(bt, SUR2, 12, BORDER)
+            bt.bind(on_release=lambda *_, k=key: self.set_tab(k))
+            tabs.add_widget(bt)
+            self._tab_btns[key] = bt
+        c.add_widget(tabs)
+
+        q = TextBox(hint_text='Busca artistas, album...', size_hint_y=None, height=dp(44))
+        q.bind(on_text_validate=lambda *_: self.set_search(q.text))
+        self.search_field = q
+        c.add_widget(q)
+
+        box = BoxLayout(orientation='vertical', spacing=dp(8), size_hint_y=None)
+        box.bind(minimum_height=box.setter('height'))
+        self.list_box = box
+        c.add_widget(box)
+
+    def set_tab(self, key):
+        self._tab = key
+        self._artist_filter = None
+        self.refresh()
+
+    def set_search(self, text):
+        self._search_q = (text or '').strip().lower()
+        self.refresh()
+
+    def on_pre_enter(self):
+        self.refresh()
+
+    def _favs(self):
+        return getattr(self.manager, '_music_favs', [])
+
+    def _matches(self, it):
+        if not self._search_q:
+            return True
+        t = (str(it.get('title', '')) + ' ' + str(it.get('channel', ''))).lower()
+        return self._search_q in t
+
+    def refresh(self):
+        favs = self._favs()
+        counts = {
+            'canciones': len(favs),
+            'artistas': len({f.get('channel', '') for f in favs if f.get('channel')}),
+            'albumes': 0,
+            'playlists': 0,
+        }
+        labels = dict(self.TABS)
+        for key, bt in self._tab_btns.items():
+            bt.canvas.before.clear()
+            if key == self._tab:
+                rr(bt, RED, 12, None)
+                bt.color = (1, 1, 1, 1)
+            else:
+                rr(bt, SUR2, 12, BORDER)
+                bt.color = MUTED
+            bt.text = '%s (%d)' % (labels[key], counts[key])
+        self.list_box.clear_widgets()
+        if self._tab == 'canciones':
+            self._view_songs(favs)
+        elif self._tab == 'artistas':
+            self._view_artists(favs)
+        elif self._tab == 'albumes':
+            self._empty('Aun no hay albumes guardados.')
+        else:
+            self._empty('Aun no tienes playlists.\nMuy pronto podras crearlas.')
+
+    def _empty(self, msg):
+        self.list_box.add_widget(Label(text=msg, color=DIM, size_hint_y=None,
+                                       height=dp(80), halign='center'))
+
+    def _view_songs(self, favs):
+        if not favs:
+            self._empty('Sin favoritos.\nManten presionada una cancion\ny elegi "Agregar a favoritos".')
+            return
+        if not any(self._matches(it) for it in favs):
+            self._empty('Sin resultados para tu busqueda.')
+            return
+        for idx, it in enumerate(favs):
+            it['idx'] = idx + 1
+            row = MusicRow(dict(it))
+            row.manager = self.manager
+            self.list_box.add_widget(row)
+
+    def _view_artists(self, favs):
+        groups = {}
+        order = []
+        for it in favs:
+            ch = safe_text(it.get('channel', ''), 'Desconocido')
+            if ch not in groups:
+                groups[ch] = []
+                order.append(ch)
+            groups[ch].append(it)
+        if self._artist_filter:
+            ch = self._artist_filter
+            head = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(6))
+            vb = B(text='< Artistas', size_hint_x=None, width=dp(96), font_size=sp(9.5))
+            rr(vb, SUR2, 10, BORDER)
+            vb.bind(on_release=lambda *_: self._open_artist(None))
+            head.add_widget(vb)
+            head.add_widget(Label(text=ch, color=WHITE, font_size=sp(12), bold=True, halign='left'))
+            self.list_box.add_widget(head)
+            songs = [it for it in groups.get(ch, []) if self._matches(it)]
+            if not songs:
+                self._empty('Sin canciones de este artista.')
+            for idx, it in enumerate(songs):
+                it['idx'] = idx + 1
+                row = MusicRow(dict(it))
+                row.manager = self.manager
+                self.list_box.add_widget(row)
+            return
+        if not order:
+            self._empty('Sin favoritos todavia.\nLos artistas aparecen aca\nsegun tus canciones guardadas.')
+            return
+        visibles = 0
+        for ch in order:
+            songs = groups[ch]
+            if not any(self._matches(it) for it in songs):
+                continue
+            visibles += 1
+            card = ClickableBox(bg=SUR, radius=14, border=BORDER,
+                                orientation='horizontal', padding=(dp(12), dp(8)),
+                                spacing=dp(8), size_hint_y=None, height=dp(58))
+            av = Label(text=(ch[:1] or '?').upper(), color=(1, 1, 1, 1), font_size=sp(16),
+                       bold=True, size_hint_x=None, width=dp(40))
+            with av.canvas:
+                from kivy.graphics import Ellipse as _El
+                Color(*RED)
+                av._circ = _El(pos=av.pos, size=(dp(36), dp(36)))
+                Color(1, 1, 1, 1)
+
+                def _sync_av(inst, *_):
+                    inst._circ.pos = (inst.center_x - dp(18), inst.center_y - dp(18))
+                av.bind(pos=_sync_av, size=_sync_av)
+            card.add_widget(av)
+            info = BoxLayout(orientation='vertical')
+            info.add_widget(Label(text=ch, color=WHITE, font_size=sp(11), bold=True,
+                                  halign='left', valign='middle',
+                                  size_hint_y=None, height=dp(24), shorten=True,
+                                  shorten_from='right'))
+            info.add_widget(Label(text='%d canciones' % len(songs), color=MUTED,
+                                  font_size=sp(8.5), halign='left'))
+            card.add_widget(info)
+            card.bind(on_release=lambda *_, name=ch: self._open_artist(name))
+            self.list_box.add_widget(card)
+        if not visibles:
+            self._empty('Sin resultados para tu busqueda.')
+
+    def _open_artist(self, name):
+        self._artist_filter = name
+        self.refresh()
+
+
 class Toggle(ButtonBehavior, Widget):
     def __init__(self, value=False, **kw): super().__init__(**kw); self.value=value; self.size_hint=(None,None); self.size=(dp(46),dp(27)); self.bind(pos=self._sync,size=self._sync); self._draw()
     def _draw(self):
@@ -1314,6 +1713,8 @@ class M(ScreenManager):
         self._music_playing = False
         self._music_tick = None
         self._music_suppress_stop = False
+        self._shuffle = False
+        self._repeat = False
         self._favs_path = os.path.join(self._data_dir(), '.music_favs.json')
         self._music_favs = self._load_favs()
 
@@ -1329,7 +1730,7 @@ class M(ScreenManager):
         self._setup_done = True
         for _cls, _name in [(Search, 'search'), (Options, 'options'), (Analyze, 'analyze'),
                             (Downloading, 'downloading'), (Downloads, 'downloads'),
-                            (Music, 'music'), (Settings, 'settings')]:
+                            (Music, 'music'), (MusicFavs, 'favs'), (Settings, 'settings')]:
             try:
                 crashlog.write_log(f"Creando pantalla {_name}...")
                 self.add_widget(_cls(name=_name))
@@ -3099,9 +3500,8 @@ class M(ScreenManager):
 
     def _toggle_fav_and_refresh(self, item):
         quedo = self.music_fav_toggle(item)
-        screen = self.get_screen('music')
-        if getattr(screen, '_view_mode', 'local') == 'favs':
-            screen.show_favorites()
+        if self.current == 'favs':
+            self.get_screen('favs').refresh()
         return quedo
 
     def music_queue_add(self, item, row=None):
@@ -3153,6 +3553,7 @@ class M(ScreenManager):
         title = item.get('title', 'Sin titulo')
         screen = self.get_screen('music')
         screen.show_mini_player(title, playing=False)
+        screen.sync_player_track()
 
         def _on_src(src):
             if not src:
@@ -3195,6 +3596,7 @@ class M(ScreenManager):
                 if screen._mp_time is not None:
                     fm = lambda x: "{}:{:02d}".format(int(x // 60), int(x % 60))
                     screen._mp_time.text = fm(pos) + ' / ' + (fm(dur) if dur else '0:00')
+                screen.update_player_tick(pos, dur)
             except Exception:
                 pass
         self._music_tick = Clock.schedule_interval(_tick, 0.5)
@@ -3218,8 +3620,9 @@ class M(ScreenManager):
         if not self._music_playing:
             return
         self._music_playing = False
-        if self._music_idx < len(self._music_queue) - 1:
-            Clock.schedule_once(lambda dt: self._music_play_idx(self._music_idx + 1), 0.3)
+        nxt = self._music_next_index()
+        if nxt is not None:
+            Clock.schedule_once(lambda dt, i=nxt: self._music_play_idx(i), 0.3)
         else:
             screen = self.get_screen('music')
             screen.show_mini_player('Cola finalizada', playing=False)
@@ -3254,6 +3657,30 @@ class M(ScreenManager):
     def music_prev(self):
         if self._music_idx > 0:
             self._music_play_idx(self._music_idx - 1)
+
+    def music_shuffle_toggle(self):
+        self._shuffle = not self._shuffle
+        return self._shuffle
+
+    def music_repeat_toggle(self):
+        self._repeat = not self._repeat
+        return self._repeat
+
+    def _music_next_index(self):
+        """Siguiente indice segun shuffle/repeat. None = terminar la cola."""
+        n = len(self._music_queue)
+        if n == 0:
+            return None
+        if self._shuffle and n > 1:
+            import random
+            others = [i for i in range(n) if i != self._music_idx]
+            return random.choice(others)
+        nxt = self._music_idx + 1
+        if nxt < n:
+            return nxt
+        if self._repeat:
+            return 0
+        return None
 
     def music_stop(self):
         self._music_stop_internal()
