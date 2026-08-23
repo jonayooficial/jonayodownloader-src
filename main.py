@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.15'
+APP_VERSION = '2.0.16'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -922,6 +922,7 @@ class MusicRow(ClickableBox):
         self.play_btn = B(text='', size_hint=(None, None), size=(dp(40), dp(40)))
         rr(self.play_btn, SUR2, 12, BORDER)
         self.play_img = btn_img(self.play_btn, 'play', dp(19))
+        self.play_btn.bind(on_release=lambda *_: self.manager.music_queue_add(self.item))
         self.add_widget(self.play_btn)
         dl = B(text='', size_hint=(None, None), size=(dp(40), dp(40)))
         rr(dl, RED, 20)
@@ -938,8 +939,8 @@ class MusicRow(ClickableBox):
         else:
             self.manager.music_queue_add(self.item)
     def bind_play(self, cb):
-        # Compatibilidad: el play directo ahora lo maneja on_release.
-        pass
+        # Compatibilidad: mantener referencia por si se usa externamente
+        self._external_play_cb = cb
     def set_playing(self, playing):
         set_icon(self.play_img, 'stop' if playing else 'play')
 
@@ -1729,26 +1730,48 @@ class M(ScreenManager):
         cached = self._stream_cache.get(cache_key)
         if cached and cached.get('url'):
             return cached
-        opts = {
-            'quiet': True, 'no_warnings': True, 'noplaylist': True,
-            'nocheckcertificate': True, 'socket_timeout': 15,
-            'extractor_args': {'youtube': {'player_client': ['tv','android']}},
-            # Solo un formato que ya tenga video+audio: ffpyplayer no hace merge.
-            'format': f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]',
-        }
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-        stream_url = info.get('url') or ''
-        if not stream_url:
-            raise Exception('YouTube no devolvio un stream progresivo reproducible.')
-        result = {
-            'url': stream_url,
-            'quality': f"{info.get('height') or res}p",
-            'duration': info.get('duration') or 0,
-            'title': info.get('title') or '',
-        }
-        self._stream_cache[cache_key] = result
-        return result
+        # Intentar progresivo primero (ffpyplayer no hace merge DASH)
+        # Si no hay progresivo a esa altura, caer a cualquier best a esa altura
+        fmt_prog = f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}][vcodec!=none][acodec!=none]'
+        fmt_any = f'best[height<={res}]/best[height<={res}]'
+        last_err = None
+        for fmt in (fmt_prog, fmt_any):
+            try:
+                opts = {
+                    'quiet': True, 'no_warnings': True, 'noplaylist': True,
+                    'nocheckcertificate': True, 'socket_timeout': 15,
+                    'extractor_args': {'youtube': {'player_client': ['android']}},
+                    'format': fmt,
+                }
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                stream_url = info.get('url') or ''
+                if not stream_url:
+                    # Si es DASH, info puede tener requested_formats
+                    req = info.get('requested_formats') or []
+                    if req:
+                        # Buscar el que tenga url
+                        for f in req:
+                            if f.get('url'):
+                                stream_url = f['url']
+                                break
+                if not stream_url:
+                    continue
+                result = {
+                    'url': stream_url,
+                    'quality': f"{info.get('height') or res}p",
+                    'duration': info.get('duration') or 0,
+                    'title': info.get('title') or '',
+                }
+                # Si pediste 720 y te dio 360, avisar que no hay progresivo mas alto
+                self._stream_cache[cache_key] = result
+                return result
+            except Exception as e:
+                last_err = e
+                continue
+        if last_err:
+            raise last_err
+        raise Exception('YouTube no devolvio un stream reproducible.')
 
     def play_stream(self, video, quality='720p'):
         """Streaming real: resuelve la URL temporal y la entrega a ffpyplayer."""
@@ -1836,12 +1859,22 @@ class M(ScreenManager):
     def _apply_stream(self, v, item, stream, busy_label=None):
         try:
             pos=v.position or 0
-            if v.duration:
-                pos = max(0, min(pos, v.duration))
-            v.state='stop'; v.source=''
-            v.source=stream['url']; v.state='play'
-            if pos and pos < 36000:
-                Clock.schedule_once(lambda dt,p=pos: setattr(v,'position',p),0.25)
+            was_playing = v.state == 'play'
+            # No limpiar source/texture para evitar flash blanco; solo cambiar url
+            v.source=stream['url']
+            if was_playing:
+                v.state='play'
+            # Restaurar posicion cuando el nuevo stream tenga duration
+            def _restore(dt):
+                try:
+                    if pos and v.duration:
+                        p = max(0, min(pos, v.duration))
+                        if p < 36000:
+                            v.seek(p / v.duration) if v.duration else setattr(v, 'position', p)
+                except Exception:
+                    pass
+            Clock.schedule_once(_restore, 0.4)
+            Clock.schedule_once(_restore, 0.9)
             item['stream_url']=stream['url']; item['stream_quality']=stream['quality']
             if busy_label: busy_label.text=stream['quality']
         except Exception as e:
