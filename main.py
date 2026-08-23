@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.21'
+APP_VERSION = '2.0.22'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -699,7 +699,7 @@ class Home(Base):
         search.bind(on_text_validate=lambda *_: self.manager.do_search(search.text)); self.search_field=search
         search_wrap.add_widget(search); rr(search_wrap, SUR2, 18, BORDER); c.add_widget(search_wrap)
 
-        chips = [('Tendencias','flame','videos trending argentina 2026'),('Música','music','musica latina 2026'),
+        chips = [('Tendencias','flame','videos trending argentina 2026'),('Videos Musicales','music','videos musicales 2026'),
                  ('Gaming','game','mejores momentos gaming'),('Noticias','news','noticias de hoy'),('En directo','live','en vivo ahora')]
         c.add_widget(ChipBar(chips, on_select=lambda q: self.manager.do_search(q), size_hint_y=None, height=dp(46)))
 
@@ -3194,25 +3194,40 @@ class M(ScreenManager):
         Clock.schedule_once(lambda dt: self.go('downloads'), 0.3)
 
     def _show_completed(self, entry, path):
-        """Diálogo de descarga completada con acciones: reproducir y abrir carpeta."""
-        d = ModalView(size_hint=(0.94, None), height=dp(270), background_color=(0, 0, 0, 0))
-        box = Card(size_hint=(0.94, None), height=dp(258), pos_hint={'center_x': .5, 'center_y': .5},
-                   orientation='vertical', spacing=dp(8), padding=dp(14))
-        box.add_widget(Label(text='Descarga completada!', color=GREEN, font_size=sp(16), bold=True,
-                             halign='center', size_hint_y=None, height=dp(34)))
-        box.add_widget(Label(text=safe_text(path, ''), color=MUTED, font_size=sp(9.5),
-                             halign='center', valign='middle', size_hint_y=1, text_size=(None, None)))
-        row = BoxLayout(size_hint_y=None, height=dp(52), spacing=dp(8))
+        """Diálogo de descarga completada: titulo del archivo grande, datos
+        cortos (formato · calidad · carpeta) y acciones. Nunca la ruta larga."""
+        d = ModalView(size_hint=(0.94, None), height=dp(280), background_color=(0, 0, 0, 0))
+        box = Card(size_hint=(0.94, None), height=dp(268), pos_hint={'center_x': .5, 'center_y': .5},
+                   orientation='vertical', spacing=dp(10), padding=dp(16))
+        box.add_widget(Label(text='Descarga completada', color=GREEN, font_size=sp(17), bold=True,
+                             halign='center', size_hint_y=None, height=dp(36)))
+        title = safe_text((entry or {}).get('title', ''), 'Archivo descargado')
+        box.add_widget(Label(text=title, color=WHITE, font_size=sp(13.5), bold=True,
+                             halign='center', valign='middle',
+                             text_size=(dp(290), dp(60)), size_hint_y=None, height=dp(60)))
+        fmt = (entry or {}).get('format', '')
+        qual = (entry or {}).get('quality', '')
+        resumen = ' · '.join([p for p in (fmt, qual) if p])
+        try:
+            carp = os.path.basename(os.path.dirname(path)) if path else ''
+        except Exception:
+            carp = ''
+        sub = ' · '.join([p for p in (resumen, 'Carpeta: ' + carp if carp else '') if p])
+        box.add_widget(Label(text=sub or 'Guardado en tus descargas', color=MUTED,
+                             font_size=sp(10.5), halign='center', valign='middle',
+                             size_hint_y=None, height=dp(26),
+                             text_size=(dp(290), None), shorten=True, shorten_from='right'))
+        row = BoxLayout(size_hint_y=None, height=dp(54), spacing=dp(8))
         buttons = []
         if entry is not None:
-            play = B(text='▶ Reproducir', font_size=sp(11.5))
+            play = B(text='▶ Reproducir', font_size=sp(12.5))
             rr(play, RED, 12, BORDER)
             play.bind(on_release=lambda *_: (d.dismiss(), self.play_download(entry)))
             buttons.append(play)
-        folder = B(text='Abrir carpeta', font_size=sp(11.5), color=WHITE)
+        folder = B(text='Abrir carpeta', font_size=sp(12.5), color=WHITE)
         rr(folder, SUR2, 12, BORDER)
         folder.bind(on_release=lambda *_: (d.dismiss(), self.open_folder()))
-        done = B(text='Listo', font_size=sp(11.5), color=WHITE)
+        done = B(text='Listo', font_size=sp(12.5), color=WHITE)
         rr(done, SUR2, 12, BORDER)
         done.bind(on_release=lambda *_: d.dismiss())
         buttons.append(folder); buttons.append(done)
