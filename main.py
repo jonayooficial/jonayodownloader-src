@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.17'
+APP_VERSION = '2.0.18'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -801,9 +801,34 @@ class Options(Base):
         f=Card(size_hint_y=None,height=dp(112),padding=dp(7)); self.btn_video=RadioRow('Video','Descarga el video con audio',True); self.btn_audio=RadioRow('Solo audio (MP3)','Descarga solo el audio del video',False); self.btn_video.bind(on_release=lambda *_:self.set_mode('video')); self.btn_audio.bind(on_release=lambda *_:self.set_mode('audio')); f.add_widget(self.btn_video); f.add_widget(self.btn_audio); c.add_widget(f)
         c.add_widget(Label(text='Calidad de video',color=WHITE,font_size=sp(15),bold=True,size_hint_y=None,height=dp(27),halign='left'))
         q=Card(size_hint_y=None,height=dp(270),padding=dp(7)); self.quality_box=q; self.quality_btns={}
-        for x,desc in [('1080p','Full HD · Recomendado'),('720p','HD'),('480p','SD'),('360p','SD'),('240p','Baja')]:
-            row=RadioRow(x,desc,x=='1080p'); row.bind(on_release=lambda _,q=x:self.set_quality(q)); q.add_widget(row); self.quality_btns[x]=row
+        self._build_quality_rows([('2160p','4K Ultra HD'),('1440p','2K QHD'),('1080p','Full HD · Recomendado'),('720p','HD'),('480p','SD'),('360p','SD'),('240p','Baja')])
         c.add_widget(q); d=B(text='Descargar',size_hint_y=None,height=dp(52),font_size=sp(14)); rr(d,RED,15); d.bind(on_release=lambda *_:self.manager.start_download()); c.add_widget(d)
+    def _build_quality_rows(self, pairs):
+        """(re)construye las filas de calidad. pairs=[('1080p','Full HD'),...]"""
+        q = self.quality_box
+        q.clear_widgets()
+        self.quality_btns = {}
+        sel = getattr(self, 'quality', '1080p')
+        if not any(x == sel for x, _ in pairs):
+            sel = '1080p' if any(x == '1080p' for x, _ in pairs) else pairs[0][0]
+        self.quality = sel
+        q.height = dp(14) + dp(52) * len(pairs)
+        for x, desc in pairs:
+            row = RadioRow(x, desc, x == sel)
+            row.bind(on_release=lambda _, q2=x: self.set_quality(q2))
+            q.add_widget(row); self.quality_btns[x] = row
+    def set_heights(self, heights):
+        """Recibe alturas reales del video ([2160,1440,...]) y muestra solo esas."""
+        try:
+            hs = sorted({int(h) for h in (heights or [])}, reverse=True)[:7]
+        except Exception:
+            hs = []
+        if not hs:
+            return
+        names = {2160: '4K Ultra HD', 1440: '2K QHD', 1080: 'Full HD', 720: 'HD',
+                 480: 'SD', 360: 'SD', 240: 'Baja'}
+        pairs = [(f'{h}p', names.get(h, '')) for h in hs]
+        self._build_quality_rows(pairs)
     def set_video(self,video):
         self.video=video; self.info_card.clear_widgets(); self.info_card.add_widget(Thumb(video.get('title',''),video.get('duration',''),video.get('color',0),video.get('thumb',''),width=126,height=78)); col=BoxLayout(orientation='vertical'); col.add_widget(Label(text=safe_text(video.get('title','Sin título'), 'Sin título'),color=WHITE,font_size=sp(11.5),bold=True,halign='left',valign='middle')); col.add_widget(Label(text=video.get('channel',''),color=MUTED,font_size=sp(9.5),halign='left')); col.add_widget(Label(text=video.get('duration',''),color=DIM,font_size=sp(9),halign='left')); self.info_card.add_widget(col)
     def set_mode(self,mode):
@@ -2105,43 +2130,97 @@ class M(ScreenManager):
         box.add_widget(pb); box.add_widget(qb); box.add_widget(db); d.add_widget(box)
         self._last_dialog=d; d.open()
 
+    QNAMES = {2160: '4K Ultra HD', 1440: '2K QHD', 1080: 'Full HD', 720: 'HD',
+              480: 'SD', 360: 'Baja', 240: 'Muy baja', 144: 'Minima'}
+
     def open_play_quality(self, video, player_callback=None):
-        """Selecciona calidad. No descarga: solo resuelve la URL directa del stream."""
+        """Selecciona calidad mostrando SOLO las resoluciones que el video
+        tiene realmente (hasta 4K/8K si existen). No descarga."""
         def start(q):
-            d.dismiss()
+            try:
+                d.dismiss()
+            except Exception:
+                pass
             if player_callback:
                 player_callback(q)
             else:
                 self.play_stream(video, q)
-        d=ModalView(size_hint=(0.86,None),height=dp(320),background_color=(0,0,0,0.55))
-        box=Card(size_hint=(0.94,None),height=dp(308),pos_hint={'center_x':.5,'center_y':.5},
-                 orientation='vertical',spacing=dp(8),padding=dp(14))
-        box.add_widget(Label(text='Calidad de reproduccion',color=WHITE,font_size=sp(14),bold=True,
-                             halign='center',size_hint_y=None,height=dp(36)))
-        for q,desc in [('1080p','Full HD'),('720p','HD'),('480p','SD'),('360p','Baja')]:
-            b=B(text=f'{q}  ·  {desc}',font_size=sp(12),color=WHITE,size_hint_y=None,height=dp(50))
-            rr(b,SUR,12,BORDER); b.bind(on_release=lambda *_ ,qq=q:start(qq)); box.add_widget(b)
-        d.add_widget(box); self._last_dialog=d; d.open()
+        d = ModalView(size_hint=(0.86, None), height=dp(360), background_color=(0, 0, 0, 0.55))
+        box = Card(size_hint=(0.94, None), height=dp(348), pos_hint={'center_x': .5, 'center_y': .5},
+                   orientation='vertical', spacing=dp(8), padding=dp(14))
+        box.add_widget(Label(text='Calidad de reproduccion', color=WHITE, font_size=sp(14), bold=True,
+                             halign='center', size_hint_y=None, height=dp(36)))
+        rows = BoxLayout(orientation='vertical', spacing=dp(6), size_hint_y=None)
+        rows.bind(minimum_height=rows.setter('height'))
+        status = Label(text='Detectando calidades disponibles...', color=MUTED,
+                       font_size=sp(10.5), size_hint_y=None, height=dp(40))
+        box.add_widget(status)
+        box.add_widget(rows)
+
+        def fill(heights):
+            try:
+                if d.parent is None:
+                    return
+            except Exception:
+                return
+            box.remove_widget(status)
+            if heights:
+                top = [h for h in heights][:6]
+                for h in reversed(top):
+                    name = self.QNAMES.get(h, '')
+                    txt = f'{h}p  ·  {name}' if name else f'{h}p'
+                    b = B(text=txt, font_size=sp(12), color=WHITE, size_hint_y=None, height=dp(46))
+                    rr(b, SUR, 12, BORDER)
+                    b.bind(on_release=lambda *_, qq=f'{h}p': start(qq))
+                    rows.add_widget(b)
+                if len(rows.children) > 6:
+                    pass
+            else:
+                for q, desc in [('1080p', 'Full HD'), ('720p', 'HD'), ('480p', 'SD'), ('360p', 'Baja')]:
+                    b = B(text=f'{q}  ·  {desc}', font_size=sp(12), color=WHITE,
+                          size_hint_y=None, height=dp(50))
+                    rr(b, SUR, 12, BORDER)
+                    b.bind(on_release=lambda *_, qq=q: start(qq))
+                    rows.add_widget(b)
+
+        url = (video or {}).get('url') or ''
+        if url:
+            def work():
+                try:
+                    hs = self._available_heights(url)
+                except Exception as e:
+                    crashlog.write_log('Error detectando calidades: ' + str(e)[:120])
+                    hs = []
+                Clock.schedule_once(lambda dt: fill(hs))
+            threading.Thread(target=work, daemon=True).start()
+        else:
+            Clock.schedule_once(lambda dt: fill([]))
+        d.add_widget(box)
+        self._last_dialog = d
+        d.open()
 
     def _resolve_stream(self, url, quality):
-        """Obtiene un formato progresivo (video+audio) y devuelve su URL directa."""
+        """Obtiene el mejor stream <= res pedido y devuelve su URL directa.
+        1) progresivo mp4 (android), 2) HLS m3u8 (ios, llega a 1080+).
+        ffpyplayer reproduce HLS nativo porque usa ffmpeg por detras."""
         import yt_dlp
         res = int(str(quality or '720p').replace('p','') or 720)
         cache_key = (url, res)
         cached = self._stream_cache.get(cache_key)
         if cached and cached.get('url'):
             return cached
-        # Intentar progresivo primero (ffpyplayer no hace merge DASH)
-        # Si no hay progresivo a esa altura, caer a cualquier best a esa altura
-        fmt_prog = f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}][vcodec!=none][acodec!=none]'
-        fmt_any = f'best[height<={res}]/best[height<={res}]'
+        attempts = [
+            # (selector, cliente)
+            (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}][vcodec!=none][acodec!=none]', 'android'),
+            (f'best[height<={res}]/best[height<={res}]', 'ios'),
+        ]
         last_err = None
-        for fmt in (fmt_prog, fmt_any):
+        for fmt, client in attempts:
             try:
                 opts = {
                     'quiet': True, 'no_warnings': True, 'noplaylist': True,
                     'nocheckcertificate': True, 'socket_timeout': 15,
-                    'extractor_args': {'youtube': {'player_client': ['android']}},
+                    'extractor_args': {'youtube': {'player_client': [client]}},
                     'format': fmt,
                 }
                 with yt_dlp.YoutubeDL(opts) as ydl:
@@ -2150,21 +2229,25 @@ class M(ScreenManager):
                 if not stream_url:
                     # Si es DASH, info puede tener requested_formats
                     req = info.get('requested_formats') or []
-                    if req:
-                        # Buscar el que tenga url
-                        for f in req:
-                            if f.get('url'):
-                                stream_url = f['url']
-                                break
+                    for f in req:
+                        if f.get('url'):
+                            stream_url = f['url']
+                            break
                 if not stream_url:
                     continue
+                real_h = int(info.get('height') or 0)
+                # Etiqueta: la calidad elegida cuando el stream real la alcanza;
+                # si YouTube solo ofrece menos, se muestra la real (honesto).
+                if real_h and real_h < int(res * 0.75):
+                    label = f'{real_h}p'
+                else:
+                    label = f'{res}p'
                 result = {
                     'url': stream_url,
-                    'quality': f"{info.get('height') or res}p",
+                    'quality': label,
                     'duration': info.get('duration') or 0,
                     'title': info.get('title') or '',
                 }
-                # Si pediste 720 y te dio 360, avisar que no hay progresivo mas alto
                 self._stream_cache[cache_key] = result
                 return result
             except Exception as e:
@@ -2173,6 +2256,33 @@ class M(ScreenManager):
         if last_err:
             raise last_err
         raise Exception('YouTube no devolvio un stream reproducible.')
+
+    def _available_heights(self, url):
+        """Resoluciones de video realmente disponibles (cacheado). Hilo."""
+        key = ('heights', url)
+        c = self._stream_cache.get(key)
+        if c is not None:
+            return c
+        import yt_dlp
+        opts = {
+            'quiet': True, 'no_warnings': True, 'noplaylist': True,
+            'skip_download': True, 'nocheckcertificate': True,
+            'socket_timeout': 15, 'check_formats': False,
+            'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        hs = set()
+        for f in (info.get('formats') or []):
+            h = f.get('height')
+            if h:
+                try:
+                    hs.add(int(h))
+                except Exception:
+                    pass
+        out = sorted(hs, reverse=True)
+        self._stream_cache[key] = out
+        return out
 
     def play_stream(self, video, quality='720p'):
         """Streaming real: resuelve la URL temporal y la entrega a ffpyplayer."""
@@ -2442,7 +2552,7 @@ class M(ScreenManager):
                      shorten=True,shorten_from='right',text_size=(None,None),size_hint_x=1)
             tl.bind(width=lambda *_: setattr(tl, 'text_size', (tl.width, None)))
             top.add_widget(tl)
-            qlabel=B(text='HD',font_size=sp(10),bold=True,color=WHITE,size_hint_x=None,width=dp(38)); rr(qlabel,(1,1,1,0.14),19,None)
+            qlabel=B(text='HD',font_size=sp(10),bold=True,color=WHITE,size_hint_x=None,width=dp(52)); rr(qlabel,(1,1,1,0.14),19,None)
             speed=B(text='',size_hint_x=None,width=dp(38)); rr(speed,(1,1,1,0.14),19,None); btn_img(speed,'speed',dp(18))
             fsb=B(text='',size_hint_x=None,width=dp(38)); rr(fsb,(1,1,1,0.14),19,None)
             fsb_img=btn_img(fsb,'fs',dp(18))
@@ -2712,7 +2822,7 @@ class M(ScreenManager):
                 'skip_download': True, 'nocheckcertificate': True,
                 'socket_timeout': 15, 'extract_flat': False,
                 'check_formats': False,
-                'extractor_args': {'youtube': {'player_client': ['android'], 'player_skip': ['webpage']}},
+                'extractor_args': {'youtube': {'player_client': ['android', 'ios'], 'player_skip': ['webpage']}},
             }
             with yt_dlp.YoutubeDL(opts) as ydl:
                 Clock.schedule_once(lambda dt: analyze.set_step(1))
@@ -2721,6 +2831,11 @@ class M(ScreenManager):
                 raise RuntimeError('No se pudo obtener la informacion del video.')
             video = self._to_video(info, 0)
             video['url'] = info.get('webpage_url') or url
+            try:
+                hs = {int(f['height']) for f in (info.get('formats') or []) if f.get('height')}
+                video['_heights'] = sorted(hs, reverse=True)
+            except Exception:
+                video['_heights'] = []
             Clock.schedule_once(lambda dt, v=video: self._analysis_done(v))
         except Exception as e:
             err = str(e)[:180]
@@ -2731,9 +2846,16 @@ class M(ScreenManager):
         self.selected = video
         analyze = self.get_screen('analyze')
         analyze.set_step(3)
-        self.get_screen('options').set_video(video)
-        self.get_screen('options').set_mode('video')
-        self.get_screen('options').set_quality('1080p')
+        opts = self.get_screen('options')
+        opts.set_video(video)
+        opts.set_mode('video')
+        heights = video.pop('_heights', None)
+        if heights:
+            opts.set_heights(heights)
+            best = f'{heights[0]}p' if heights else '1080p'
+            opts.set_quality(best if int(best[:-1]) <= 1080 else '1080p')
+        else:
+            opts.set_quality('1080p')
         Clock.schedule_once(lambda dt: self.go('options'), 0.25)
 
     def _analysis_error(self, msg):
