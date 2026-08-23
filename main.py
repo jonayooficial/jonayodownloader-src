@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.18'
+APP_VERSION = '2.0.19'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -3647,7 +3647,8 @@ class M(ScreenManager):
             try:
                 ydl_opts = {'format': 'bestaudio[ext=m4a]/bestaudio/best',
                             'quiet': True, 'no_warnings': True,
-                            'nocheckcertificate': True, 'socket_timeout': 15}
+                            'nocheckcertificate': True, 'socket_timeout': 15,
+                            'extractor_args': {'youtube': {'player_client': ['android', 'ios']}}}
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=False)
                 src = ''
@@ -3661,12 +3662,126 @@ class M(ScreenManager):
                                 break
                 Clock.schedule_once(lambda dt: on_done(src))
             except Exception as e:
-                crashlog.write_log('Error resolviendo audio: ' + str(e)[:120])
+                crashlog.write_log('Error resolviendo audio: ' + str(e)[:150])
                 Clock.schedule_once(lambda dt: on_done(''))
         threading.Thread(target=_run, daemon=True).start()
 
+    def _music_local_src(self, item):
+        """Si el item es una cancion ya descargada, devuelve su archivo."""
+        for k in ('local_path', 'public_path'):
+            p = item.get(k) or ''
+            try:
+                if p and os.path.isfile(p):
+                    return p
+            except Exception:
+                pass
+        uri = item.get('public_uri') or ''
+        if uri.startswith('file://'):
+            try:
+                p = uri[len('file://'):]
+                if os.path.isfile(p):
+                    return p
+            except Exception:
+                pass
+        return ''
+
+    def _music_load_and_play(self, src):
+        """Carga y reproduce src (URL o archivo). True si pudo empezar."""
+        try:
+            from kivy.core.audio import SoundLoader
+            snd = SoundLoader.load(src)
+            if snd is None:
+                crashlog.write_log('SoundLoader devolvio None: ' + str(src)[:90])
+                return False
+            self._music_sound = snd
+            self._music_playing = True
+            snd.bind(on_stop=self._music_on_stop)
+            snd.play()
+            try:
+                title = self._music_queue[self._music_idx].get('title', '')
+            except Exception:
+                title = ''
+            self.get_screen('music').show_mini_player(title, playing=True)
+            self._music_start_tick()
+            return True
+        except Exception as e:
+            crashlog.write_log('Error reproduciendo audio: ' + str(e)[:150])
+            self._music_sound = None
+            self._music_playing = False
+            return False
+
+    def _music_status(self, txt):
+        """Muestra estado de carga en el titulo del mini player."""
+        try:
+            self.get_screen('music')._mp_title.text = txt
+        except Exception:
+            pass
+
+    def _music_fallback_download(self, item):
+        """Plan B: baja el audio a una carpeta temporal y lo reproduce local.
+        Plan C (si esto tambien falla): avisa al usuario con un dialogo."""
+        import yt_dlp
+        url = item.get('url') or ''
+        if not url:
+            self._music_alert_fail(item)
+            return
+        title = safe_text(item.get('title', 'cancion'), 'cancion')
+        try:
+            out_dir = os.path.join(self._default_download_path(), '.reproducir')
+            os.makedirs(out_dir, exist_ok=True)
+        except Exception:
+            out_dir = os.path.join(self._data_dir(), '.reproducir')
+            os.makedirs(out_dir, exist_ok=True)
+        outtmpl = os.path.join(out_dir, '%(id)s.%(ext)s')
+
+        def hook(d):
+            if d.get('status') == 'downloading':
+                total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+                done = d.get('downloaded_bytes') or 0
+                pct = int(done * 100 / total) if total else 0
+                Clock.schedule_once(lambda dt, p=pct: self._music_status(
+                    title[:28] + (' · %d%%' % p if p else '')))
+
+        def work():
+            try:
+                opts = {'outtmpl': outtmpl,
+                        'format': 'bestaudio[ext=m4a]/bestaudio/best',
+                        'progress_hooks': [hook],
+                        'quiet': True, 'no_warnings': True,
+                        'nocheckcertificate': True, 'socket_timeout': 20,
+                        'windowsfilenames': True,
+                        'extractor_args': {'youtube': {'player_client': ['tv', 'android']}}}
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                fn = ''
+                if info:
+                    rp = info.get('requested_downloads') or []
+                    if rp:
+                        fn = rp[0].get('filepath') or ''
+                if not fn and info:
+                    try:
+                        fn = ydl.prepare_filename(info)
+                    except Exception:
+                        fn = ''
+                if fn and os.path.isfile(fn):
+                    item['local_path'] = fn
+                    Clock.schedule_once(lambda dt, f=fn: self._music_load_and_play(f))
+                else:
+                    raise RuntimeError('archivo no encontrado tras descargar')
+            except Exception as e:
+                crashlog.write_log('Fallback audio fallo: ' + str(e)[:150])
+                Clock.schedule_once(lambda dt: self._music_alert_fail(item))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _music_alert_fail(self, item):
+        title = safe_text((item or {}).get('title', ''), '')
+        self._music_status(title)
+        self._info('Reproductor',
+                   'No se pudo reproducir esta cancion.\nVerifica tu conexion e intenta de nuevo.')
+
     def _music_play_idx(self, idx):
-        """Reproduce la cancion en la cola[idx]."""
+        """Reproduce la cancion en la cola[idx].
+        Orden: archivo local -> streaming URL -> descarga temporal."""
         if idx < 0 or idx >= len(self._music_queue):
             return
         self._music_stop_internal()
@@ -3677,24 +3792,14 @@ class M(ScreenManager):
         screen.show_mini_player(title, playing=False)
         screen.sync_player_track()
 
+        local = self._music_local_src(item)
+        if local and self._music_load_and_play(local):
+            return
+
         def _on_src(src):
-            if not src:
-                crashlog.write_log('No se pudo resolver URL de audio')
+            if src and self._music_load_and_play(src):
                 return
-            try:
-                from kivy.core.audio import SoundLoader
-                snd = SoundLoader.load(src)
-                if snd is None:
-                    crashlog.write_log('SoundLoader devolvió None')
-                    return
-                self._music_sound = snd
-                self._music_playing = True
-                snd.bind(on_stop=self._music_on_stop)
-                snd.play()
-                screen.show_mini_player(title, playing=True)
-                self._music_start_tick()
-            except Exception as e:
-                crashlog.write_log('Error reproduciendo audio: ' + str(e)[:120])
+            self._music_fallback_download(item)
 
         self._music_resolve_url(item, _on_src)
 
