@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.19'
+APP_VERSION = '2.0.20'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -880,11 +880,20 @@ class Downloads(Base):
         super().__init__(**kw); self.filter='Todos'; self.content=ScrollView(do_scroll_x=False,bar_width=0); body=BoxLayout(orientation='vertical',padding=(dp(14),dp(10)),spacing=dp(9),size_hint_y=None); body.bind(minimum_height=body.setter('height')); self.body=body; self.content.add_widget(body); self.build(); self.add_widget(self.make())
     def build(self):
         c=self.body; h=BoxLayout(size_hint_y=None,height=dp(48)); h.add_widget(Label(text='Descargas',color=WHITE,font_size=sp(22),bold=True,halign='left')); sr=B(text='',size_hint_x=None,width=dp(38)); sr.add_widget(Image(source=icon('search'),size_hint=(None,None),size=(dp(22),dp(22)),pos_hint={'center_x':.5,'center_y':.5})); h.add_widget(sr); c.add_widget(h)
-        c.add_widget(ChipBar([('Todos','flame','Todos'),('Videos','download','Videos'),('Audios','music','Audios'),('Completadas','yt','Completadas')],on_select=lambda f:self.set_filter(f),size_hint_y=None,height=dp(40)))
+        self.counts_lbl=Label(text='',color=MUTED,font_size=sp(9.2),halign='left',size_hint_y=None,height=dp(22))
+        c.add_widget(self.counts_lbl)
+        c.add_widget(ChipBar([('Todos','flame','Todos'),('Videos','download','Videos'),('Musica','music','Videos_Musica'),('Completadas','yt','Completadas')],on_select=lambda f:self.set_filter(f),size_hint_y=None,height=dp(40)))
         box=BoxLayout(orientation='vertical',spacing=dp(8),size_hint_y=None); box.bind(minimum_height=box.setter('height')); self.list_box=box; c.add_widget(box)
-    def set_filter(self,f): self.filter=f; self.manager._refresh_downloads()
+    def set_filter(self,f): self.filter='Audios' if f=='Videos_Musica' else f; self.manager._refresh_downloads()
     def refresh(self,items):
-        self.all_items=items; items=[d for d in items if self._match(d)]
+        self.all_items=items
+        try:
+            nv=sum(1 for d in items if d.get('format')=='MP4')
+            nm=sum(1 for d in items if d.get('format')=='MP3')
+            self.counts_lbl.text=f'{nv} videos · {nm} canciones'
+        except Exception:
+            pass
+        items=[d for d in items if self._match(d)]
         self.list_box.clear_widgets()
         if not items:
             empty=Card(size_hint_y=None,height=dp(150)); empty.add_widget(Image(source=icon('download'),size_hint=(None,None),size=(dp(38),dp(38)))); empty.add_widget(Label(text='Aún no hay descargas',color=WHITE,font_size=sp(14),bold=True)); empty.add_widget(Label(text='Tus archivos completados aparecerán aquí.',color=MUTED,font_size=sp(9.5))); self.list_box.add_widget(empty); return
@@ -3310,9 +3319,15 @@ class M(ScreenManager):
         return False
 
     def play_download(self, item):
-        """Reproduce el archivo descargado. Intenta reproducirlo en la app
-        (reproductor interno); si no es posible, usa el reproductor del sistema."""
+        """Reproduce el archivo descargado. MP3 -> reproductor de musica de la
+        app (mini player + cola). MP4 -> reproductor interno de video; si no
+        es posible, usa el reproductor del sistema."""
         try:
+            if item.get('format') == 'MP3':
+                local = item.get('local_path') or ''
+                if local and os.path.isfile(local):
+                    self.music_queue_add(dict(item))
+                    return
             if getattr(self, '_player_fallback', False):
                 # Si el interno ya fallo una vez, no volver a intentarlo en bucle.
                 self._player_fallback = False
