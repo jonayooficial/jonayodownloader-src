@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.22'
+APP_VERSION = '2.0.23'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -1890,17 +1890,52 @@ class M(ScreenManager):
         try:
             if os.path.exists(self.history_file):
                 with open(self.history_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-        except Exception:
-            pass
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        crashlog.write_log(f'Historial cargado: {len(data)} descargas')
+                        return data
+                    else:
+                        crashlog.write_log(f'Historial corrupto: tipo {type(data)} no es lista, ignorando')
+                        try:
+                            os.rename(self.history_file, self.history_file + '.bad')
+                        except Exception:
+                            pass
+                        return []
+            else:
+                crashlog.write_log('Historial no existe aun (primera ejecucion)')
+        except Exception as e:
+            crashlog.write_log(f'Error cargando historial: {e}')
+            try:
+                if os.path.exists(self.history_file):
+                    os.rename(self.history_file, self.history_file + '.bad')
+                    crashlog.write_log('Historial corrupto renombrado a .bad para inspeccion')
+            except Exception:
+                pass
         return []
 
     def _save_history(self):
         try:
-            with open(self.history_file, 'w', encoding='utf-8') as f:
-                json.dump(self.downloads, f, ensure_ascii=False)
-        except Exception:
-            pass
+            tmp = self.history_file + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(self.downloads, f, ensure_ascii=False, indent=2)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except Exception:
+                    pass
+            try:
+                os.replace(tmp, self.history_file)
+            except Exception:
+                # fallback para filesystems sin os.replace atomico
+                try:
+                    os.rename(tmp, self.history_file)
+                except Exception:
+                    # ultimo intento: escribir directo
+                    with open(self.history_file, 'w', encoding='utf-8') as f2:
+                        json.dump(self.downloads, f2, ensure_ascii=False, indent=2)
+            crashlog.write_log(f'Historial guardado: {len(self.downloads)} descargas')
+        except Exception as e:
+            crashlog.write_log(f'Error guardando historial: {e}')
 
     def go(self, n):
         self.transition = SlideTransition(direction='left', duration=.16)
@@ -4216,17 +4251,34 @@ class M(ScreenManager):
 
         threading.Thread(target=_run, daemon=True).start()
 
-    def _on_update_check(self, update):
+    def _on_update_check(self, update, auto=False):
         if not update:
-            Clock.schedule_once(lambda dt: self._info('Sin actualizaciones',
-                                                      f'Ya tienes la ultima version (v{APP_VERSION}).'))
+            if not auto:
+                Clock.schedule_once(lambda dt: self._info('Sin actualizaciones',
+                                                          f'Ya tienes la ultima version (v{APP_VERSION}).'))
             return
         from updater import _cmp_versions
         if _cmp_versions(update.get('version', ''), update.get('current', APP_VERSION)) <= 0:
-            Clock.schedule_once(lambda dt: self._info('Sin actualizaciones',
-                                                      f'Ya tienes la ultima version (v{APP_VERSION}).'))
+            if not auto:
+                Clock.schedule_once(lambda dt: self._info('Sin actualizaciones',
+                                                          f'Ya tienes la ultima version (v{APP_VERSION}).'))
             return
-        self._update_dialog(update)
+        # Anti-loop: en el chequeo automatico del arranque, avisar una sola vez
+        # por version cada 12 horas. El chequeo manual siempre avisa.
+        if auto:
+            try:
+                ver = str(update.get('version', ''))
+                prompts = self._app_settings.get('update_prompts', {})
+                import time as _t
+                last = float(prompts.get(ver, 0) or 0)
+                if _t.time() - last < 12 * 3600:
+                    crashlog.write_log('Update ' + ver + ': ya avisado hace poco, no repito el dialogo')
+                    return
+                prompts[ver] = _t.time()
+                self._save_app_setting('update_prompts', prompts)
+            except Exception:
+                pass
+        Clock.schedule_once(lambda dt: self._update_dialog(update))
 
     def _update_dialog(self, update):
         notes = update.get('notes', '') or ''
@@ -4259,11 +4311,21 @@ class M(ScreenManager):
         d.open()
 
     def _install_update(self, update):
-        """Descarga el APK e instala la actualización desde la propia app."""
+        """Descarga el APK e instala la actualización desde la propia app.
+        Registra el intento (anti-loop) y marca _updating para que on_pause
+        deje morir la app limpia y el reinicio sea con la version nueva."""
         apk_url = update.get('apk_url') or ''
         if not apk_url:
             self._info('Actualizar', 'No se encontro el enlace del APK.\nAbre: ' + update.get('url', ''))
             return
+        try:
+            import time as _t
+            self._save_app_setting('update_attempt', {
+                'version': str(update.get('version', '')),
+                'time': _t.time()})
+        except Exception:
+            pass
+        self._updating = True
         dest = os.path.join(self.download_path, 'jonayodownloader-update.apk')
         dlg = ModalView(size_hint=(0.9, 0.35), background_color=(0, 0, 0, 0))
         box = Card(size_hint=(0.94, None), height=dp(150), pos_hint={'center_x': .5, 'center_y': .5})
@@ -4295,7 +4357,6 @@ class M(ScreenManager):
         except Exception:
             pass
         self._info('No se pudo actualizar', err + '\n\nDescargalo manual:\n' + 'https://github.com/Jonayo/jonayodownloader-apk/releases')
-
     def _launch_installer(self, apk_path, dlg):
         try:
             dlg.dismiss()
@@ -4314,7 +4375,7 @@ class M(ScreenManager):
         if not uri:
             self._info('Instala el APK',
                        'No se pudo preparar la instalacion automatica.\n'
-                       'Descargalo manual desde:\nhttps://github.com/jonayooficial/jonayodownloader-apk/releases')
+                        'Descargalo manual desde:\nhttps://github.com/Jonayo/jonayodownloader-apk/releases')
             return
         try:
             from jnius import autoclass
@@ -4328,7 +4389,7 @@ class M(ScreenManager):
             PythonActivity.mActivity.startActivity(intent)
         except Exception as e:
             crashlog.write_log('Error abriendo instalador: ' + str(e)[:200])
-            self._info('Instala el APK', 'Descargalo manual desde:\nhttps://github.com/jonayooficial/jonayodownloader-apk/releases')
+            self._info('Instala el APK', 'Descargalo manual desde:\nhttps://github.com/Jonayo/jonayodownloader-apk/releases')
 
     def show_video_menu(self, video):
         def copy_link():
@@ -4431,7 +4492,7 @@ class AppMain(App):
             crashlog.write_log('Crash previo detectado.')
             Clock.schedule_once(lambda dt: self._show_crash_notice(previous_crash), 0.5)
         if check_for_update is not None:
-            Clock.schedule_once(lambda dt: check_for_update(m._on_update_check), 2)
+            Clock.schedule_once(lambda dt: check_for_update(lambda u: m._on_update_check(u, auto=True)), 2)
         return m
 
     def _on_keyboard(self, window, key, scancode, codepoint, modifiers):
@@ -4497,9 +4558,13 @@ class AppMain(App):
     def on_pause(self):
         """HOME o cambiar de app. Con 'Seguir escuchando' activado la app queda
         residente y la musica sigue sonando. Si esta desactivado, se detiene
-        la musica y la app se cierra (comportamiento clasico)."""
+        la musica y la app se cierra (comportamiento clasico).
+        Durante una instalacion de actualizacion siempre se libera la app
+        para que el reinicio sea limpio con la version nueva (evita loops)."""
         try:
             m = self.manager
+            if getattr(m, '_updating', False):
+                return False
             if getattr(m, 'bg_music', True):
                 return True
             if m._music_sound is not None:
