@@ -802,7 +802,7 @@ class Options(Base):
         self.q_label=Label(text='Calidad de video',color=WHITE,font_size=sp(15),bold=True,size_hint_y=None,height=dp(27),halign='left')
         c.add_widget(self.q_label)
         q=Card(size_hint_y=None,height=dp(270),padding=dp(7)); self.quality_box=q; self.quality_btns={}
-        self._build_quality_rows([('2160p','4K Ultra HD'),('1440p','2K QHD'),('1080p','Full HD · Recomendado'),('720p','HD'),('480p','SD'),('360p','SD'),('240p','Baja')])
+        self._build_quality_rows([('4320p','8K Ultra HD'),('2160p','4K Ultra HD'),('1440p','2K QHD'),('1080p','Full HD'),('720p','HD'),('480p','SD'),('360p','SD')])
         c.add_widget(q); d=B(text='Descargar',size_hint_y=None,height=dp(52),font_size=sp(14)); rr(d,RED,15); d.bind(on_release=lambda *_:self.manager.start_download()); c.add_widget(d)
     def _build_quality_rows(self, pairs):
         """(re)construye las filas de calidad. pairs=[('1080p','Full HD'),...]"""
@@ -826,7 +826,7 @@ class Options(Base):
             hs = []
         if not hs:
             return
-        names = {2160: '4K Ultra HD', 1440: '2K QHD', 1080: 'Full HD', 720: 'HD',
+        names = {4320: '8K Ultra HD', 2160: '4K Ultra HD', 1440: '2K QHD', 1080: 'Full HD', 720: 'HD',
                  480: 'SD', 360: 'SD', 240: 'Baja'}
         pairs = [(f'{h}p', names.get(h, '')) for h in hs]
         self._build_quality_rows(pairs)
@@ -2117,11 +2117,32 @@ class M(ScreenManager):
             options = self.get_screen('options')
             options.set_video(self.selected)
             options.set_mode('video')
-            options.set_quality('1080p')
+            url = (video or {}).get('url') or ''
+            if url:
+                options.set_quality('Detectando calidades...')
+                def detect():
+                    try:
+                        hs = self._available_heights(url)
+                        Clock.schedule_once(lambda dt: self._apply_heights(hs))
+                    except Exception:
+                        Clock.schedule_once(lambda dt: options.set_quality('1080p'))
+                threading.Thread(target=detect, daemon=True).start()
+            else:
+                options.set_quality('1080p')
             self.go('options')
         except Exception as exc:
             crashlog.write_crash('Error abriendo opciones:\n' + traceback.format_exc())
             self._info('No se pudo abrir', str(exc)[:180])
+
+    def _apply_heights(self, hs):
+        try:
+            options = self.get_screen('options')
+            if hs:
+                options.set_heights(hs)
+                best = f'{hs[0]}p'
+                options.set_quality(best)
+        except Exception:
+            pass
 
     # ─── COLA ──────────────────────────────────────────────────
     def add_to_queue(self, video, notify=True):
@@ -2952,8 +2973,8 @@ class M(ScreenManager):
         heights = video.pop('_heights', None)
         if heights:
             opts.set_heights(heights)
-            best = f'{heights[0]}p' if heights else '1080p'
-            opts.set_quality(best if int(best[:-1]) <= 1080 else '1080p')
+            best = f'{heights[0]}p' if heights else '4320p'
+            opts.set_quality(best)
         else:
             opts.set_quality('1080p')
         Clock.schedule_once(lambda dt: self.go('options'), 0.25)
