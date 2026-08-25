@@ -1980,7 +1980,7 @@ class M(ScreenManager):
                 'extract_flat': True, 'playlistend': 8,
                 'check_formats': False, 'nocheckcertificate': True,
                 'socket_timeout': 10,
-                'extractor_args': {'youtube': {'player_client': ['tv', 'android']}},
+                'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr']}},
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 results = ydl.extract_info('ytsearch8:' + query, download=False)
@@ -2299,7 +2299,7 @@ class M(ScreenManager):
             return cached
         attempts = [
             # (selector, cliente)
-            (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}][vcodec!=none][acodec!=none]', 'android'),
+            (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}][vcodec!=none][acodec!=none]', 'android_vr'),
             (f'best[height<={res}]/best[height<={res}]', 'ios'),
         ]
         last_err = None
@@ -2358,7 +2358,7 @@ class M(ScreenManager):
             'quiet': True, 'no_warnings': True, 'noplaylist': True,
             'skip_download': True, 'nocheckcertificate': True,
             'socket_timeout': 15, 'check_formats': False,
-            'extractor_args': {'youtube': {'player_client': ['tv', 'android', 'ios']}},
+            'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios']}},
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -2425,8 +2425,8 @@ class M(ScreenManager):
                 opts={'outtmpl':os.path.join(out_dir,'%(title).80s.%(ext)s'),
                       'progress_hooks':[hook],'quiet':True,'no_warnings':True,
                       'nocheckcertificate':True,'socket_timeout':20,
-                      'extractor_args':{'youtube':{'player_client':['tv','android']}},
-                      'format':f'best[height<={int(str(quality).replace("p","") or 720)}]/best',
+                      'extractor_args':{'youtube':{'player_client':['tv','android_vr','ios']}},
+                      'format':f'bestvideo[height<={int(str(quality).replace("p","") or 720)}]+bestaudio/best[height<={int(str(quality).replace("p","") or 720)}]/best',
                       'merge_output_format':'mp4'}
                 ff=self._ensure_ffmpeg()
                 if ff: opts['ffmpeg_location']=ff
@@ -2915,7 +2915,7 @@ class M(ScreenManager):
                 'skip_download': True, 'nocheckcertificate': True,
                 'socket_timeout': 15, 'extract_flat': False,
                 'check_formats': False,
-                'extractor_args': {'youtube': {'player_client': ['tv', 'android', 'ios'], 'player_skip': ['webpage']}},
+                'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios'], 'player_skip': ['webpage']}},
             }
             with yt_dlp.YoutubeDL(opts) as ydl:
                 Clock.schedule_once(lambda dt: analyze.set_step(1))
@@ -3074,10 +3074,10 @@ class M(ScreenManager):
             'windowsfilenames': True,
             'logger': _YDL_Logger(),
             'noprogress': True,
-            # YouTube bloquea con 403 los URLs del cliente web (y sin JS runtime
-            # el nsig queda incompleto). tv/android devuelven formatos que se
-            # descargan sin JS y a 1080p.
-            'extractor_args': {'youtube': {'player_client': ['tv', 'android']}},
+            # android_vr: version actual del cliente Android (reemplaza android
+            # deprecado que solo daba 360p muxed). ios: fallback que llega a 1080+.
+            # tv: dispositivos Android TV / smart TV.
+            'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios']}},
         }
         if ffmpeg_bin:
             ydl_opts['ffmpeg_location'] = ffmpeg_bin
@@ -3769,7 +3769,7 @@ class M(ScreenManager):
                 ydl_opts = {'format': 'bestaudio[ext=m4a]/bestaudio/best',
                             'quiet': True, 'no_warnings': True,
                             'nocheckcertificate': True, 'socket_timeout': 15,
-                            'extractor_args': {'youtube': {'player_client': ['android', 'ios']}}}
+                            'extractor_args': {'youtube': {'player_client': ['android_vr', 'ios']}}}
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=False)
                 src = ''
@@ -3871,7 +3871,7 @@ class M(ScreenManager):
                         'quiet': True, 'no_warnings': True,
                         'nocheckcertificate': True, 'socket_timeout': 20,
                         'windowsfilenames': True,
-                        'extractor_args': {'youtube': {'player_client': ['tv', 'android']}}}
+                        'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios']}}}
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=True)
                 fn = ''
