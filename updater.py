@@ -1,7 +1,7 @@
 import os
 import threading
 
-VERSION = "2.0.23"
+VERSION = "2.0.26"
 API_URL = "https://api.github.com/repos/Jonayo/jonayodownloader-apk/releases/latest"
 DL_URL = "https://github.com/Jonayo/jonayodownloader-apk/releases/latest"
 _last_error = ""
@@ -17,11 +17,20 @@ def _cmp_versions(a, b):
 def _fetch_json(url, timeout=15):
     import requests
     import certifi
-    resp = requests.get(url, timeout=timeout,
-                        headers={"User-Agent": "Mozilla/5.0"},
-                        verify=certifi.where())
-    resp.raise_for_status()
-    return resp.json()
+    import time as _t
+    last_err = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(url, timeout=timeout,
+                                headers={"User-Agent": "Mozilla/5.0"},
+                                verify=certifi.where())
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                _t.sleep(1)
+    raise last_err
 
 
 def _asset_url(data):
