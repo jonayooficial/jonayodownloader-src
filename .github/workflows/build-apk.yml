@@ -39,6 +39,11 @@ jobs:
           ccache -M 500M || true
           df -h
 
+      - name: Clean buildozer cache
+        run: |
+          rm -rf ~/.buildozer
+          echo "Buildozer cache cleaned"
+
       - name: Decode signing keystore
         run: |
           echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | base64 -d > release.keystore
@@ -62,14 +67,23 @@ jobs:
       - name: List build output
         run: |
           ls -la bin/
-          APK=$(ls bin/*.apk | head -n 1)
+          for f in bin/*.apk; do
+            echo "=== $f ==="
+            file "$f"
+          done
+          APK=$(ls bin/*.apk | grep -i release | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "WARNING: No release APK found, using first APK"
+            APK=$(ls bin/*.apk | head -n 1)
+          fi
           echo "APK=$APK"
           ls -la "$APK"
+          echo "APK=$APK" >> $GITHUB_OUTPUT
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: apk
+          name: apk-release
           path: bin/*.apk
 
       - name: Release APK
