@@ -1723,8 +1723,12 @@ class Settings(Base):
 
 
 class InfoDialog(ModalView):
-    def __init__(self,title,text,**kw):
-        super().__init__(size_hint=(.88,.40),background_color=(0,0,0,.55),**kw); box=Card(size_hint=(.92,None),height=dp(220),pos_hint={'center_x':.5,'center_y':.5},padding=dp(15)); box.add_widget(Label(text=title,color=WHITE,font_size=sp(16),bold=True,size_hint_y=None,height=dp(35))); box.add_widget(Label(text=text,color=MUTED,font_size=sp(10.5),halign='center',valign='middle',text_size=(dp(270),dp(100)),size_hint_y=None,height=dp(100))); ok=B(text='Cerrar',size_hint_y=None,height=dp(44)); rr(ok,RED,12); ok.bind(on_release=lambda *_:self.dismiss()); box.add_widget(ok); self.add_widget(box)
+    def __init__(self,title,text,on_ok=None,ok_text='Cerrar',**kw):
+        super().__init__(size_hint=(.88,.40),background_color=(0,0,0,.55),**kw); box=Card(size_hint=(.92,None),height=dp(220),pos_hint={'center_x':.5,'center_y':.5},padding=dp(15)); box.add_widget(Label(text=title,color=WHITE,font_size=sp(16),bold=True,size_hint_y=None,height=dp(35))); box.add_widget(Label(text=text,color=MUTED,font_size=sp(10.5),halign='center',valign='middle',text_size=(dp(270),dp(100)),size_hint_y=None,height=dp(100))); ok=B(text=ok_text,size_hint_y=None,height=dp(44)); rr(ok,RED,12); 
+        def _close_and_action(*_):
+            self.dismiss()
+            if on_ok: on_ok()
+        ok.bind(on_release=_close_and_action); box.add_widget(ok); self.add_widget(box)
 
 # ─── GESTOR DE PANTALLAS ────────────────────────────────────────
 class _YDL_Logger:
@@ -1831,6 +1835,7 @@ class M(ScreenManager):
         self._ensure_ffmpeg()
         self._cleanup_play_tmp()
         self._load_trending()
+        self._check_clipboard()
 
     def _cleanup_play_tmp(self):
         """Borra archivos temporales de reproducción que quedaron de sesiones
@@ -2023,6 +2028,31 @@ class M(ScreenManager):
     # ─── TENDENCIAS REAL ───────────────────────────────────────
     def _load_trending(self):
         threading.Thread(target=self._trending_thread, daemon=True).start()
+
+    def _check_clipboard(self):
+        """Detecta si hay un enlace de video en el portapapeles y pregunta si descargar."""
+        try:
+            from kivy.core.clipboard import Clipboard
+            text = Clipboard.paste()
+            if not text:
+                return
+            text = text.strip()
+            if not text.startswith('http://') and not text.startswith('https://'):
+                return
+            if not any(s in text for s in ['youtube.com', 'youtu.be', 'tiktok.com',
+                     'instagram.com', 'facebook.com', 'twitter.com', 'x.com',
+                     'vimeo.com', 'dailymotion.com', 'twitch.tv', 'soundcloud.com']):
+                return
+            def _open_clipboard(dt):
+                self._clipboard_url = text
+                self._info('Enlace detectado',
+                    f'Se encontro este enlace en el portapapeles:\n\n{text[:80]}...\n\n'
+                    'Queres analizarlo?',
+                    on_ok=lambda: self.analyze_url(self._clipboard_url),
+                    ok_text='Analizar')
+            Clock.schedule_once(_open_clipboard, 1.5)
+        except Exception:
+            pass
 
     def _trending_thread(self):
         import yt_dlp
@@ -2936,10 +2966,10 @@ class M(ScreenManager):
     def analyze_url(self, url):
         url = (url or '').strip()
         if not url:
-            self._info('Enlace', 'Pega un enlace de YouTube primero.')
+            self._info('Enlace', 'Pega un enlace de video o musica.')
             return
-        if not ('youtube.com/' in url or 'youtu.be/' in url or 'youtube-nocookie.com/' in url):
-            self._info('Enlace no valido', 'El enlace no parece ser de YouTube.')
+        if not url.startswith('http://') and not url.startswith('https://'):
+            self._info('Enlace no valido', 'El enlace debe empezar con http:// o https://')
             return
         self._pending_url = url
         if 'analyze' in self.screen_names:
@@ -2957,8 +2987,10 @@ class M(ScreenManager):
         analyze = self.get_screen('analyze')
         try:
             Clock.schedule_once(lambda dt: analyze.set_step(0))
+            is_playlist = 'list=' in url or '/playlist' in url
             opts = {
-                'quiet': True, 'no_warnings': True, 'noplaylist': True,
+                'quiet': True, 'no_warnings': True,
+                'noplaylist': False if is_playlist else True,
                 'skip_download': True, 'nocheckcertificate': True,
                 'socket_timeout': 15, 'extract_flat': False,
                 'check_formats': False,
@@ -2967,7 +2999,16 @@ class M(ScreenManager):
             with yt_dlp.YoutubeDL(opts) as ydl:
                 Clock.schedule_once(lambda dt: analyze.set_step(1))
                 info = ydl.extract_info(url, download=False)
-            if not info or not info.get('id'):
+            if not info:
+                raise RuntimeError('No se pudo obtener la informacion.')
+            if info.get('_type') == 'playlist' or info.get('entries'):
+                entries = list(info.get('entries') or [])
+                entries = [e for e in entries if e and e.get('id')]
+                if not entries:
+                    raise RuntimeError('La playlist esta vacia o no se pudo leer.')
+                Clock.schedule_once(lambda dt, ents=entries, u=url: self._playlist_detected(ents, u))
+                return
+            if not info.get('id'):
                 raise RuntimeError('No se pudo obtener la informacion del video.')
             video = self._to_video(info, 0)
             video['url'] = info.get('webpage_url') or url
@@ -2988,6 +3029,67 @@ class M(ScreenManager):
             err = str(e)[:180]
             crashlog.write_log('Error analizando enlace: ' + err)
             Clock.schedule_once(lambda dt, m=err: self._analysis_error(m))
+
+    def _playlist_detected(self, entries, url):
+        self._playlist_entries = entries
+        self._playlist_url = url
+        count = len(entries)
+        titles = '\n'.join([f"  {i+1}. {safe_text(e.get('title',''), 'Video')}" for i, e in enumerate(entries[:10])])
+        if count > 10:
+            titles += f"\n  ... y {count - 10} mas"
+        self._info('Playlist detectada',
+                    f'{count} videos encontrados.\n\n{titles}\n\n'
+                    'Se descargaran todos en calidad video (mejor disponible) '
+                    'o podes cancelar.',
+                    on_ok=lambda: self._start_playlist_download(),
+                    ok_text='Descargar todo')
+
+    def _start_playlist_download(self):
+        entries = getattr(self, '_playlist_entries', [])
+        if not entries:
+            return
+        self._playlist_queue = list(entries)
+        self._playlist_downloaded = 0
+        self._playlist_total = len(entries)
+        self._info('Descargando playlist',
+                    f'0/{self._playlist_total} videos descargados. '
+                    'La descarga empezara en segundo plano.')
+        threading.Thread(target=self._playlist_download_thread, daemon=True).start()
+
+    def _playlist_download_thread(self):
+        import yt_dlp
+        _patch_ytdlp_write_string()
+        ffmpeg_bin = self._ensure_ffmpeg()
+        while self._playlist_queue:
+            entry = self._playlist_queue.pop(0)
+            vid_url = entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id','')}"
+            vid_title = safe_text(entry.get('title', ''), 'video')
+            try:
+                opts = {
+                    'outtmpl': os.path.join(self.download_path, '%(title)s.%(ext)s'),
+                    'nocheckcertificate': True, 'quiet': True, 'no_warnings': True,
+                    'socket_timeout': 20, 'continuedl': True, 'retries': 5,
+                    'fragment_retries': 5, 'concurrent_fragment_downloads': 2,
+                    'windowsfilenames': True, 'noprogress': True,
+                    'format': 'bestvideo+bestaudio/best',
+                    'merge_output_format': 'mp4',
+                    'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios']}},
+                }
+                if ffmpeg_bin:
+                    opts['ffmpeg_location'] = ffmpeg_bin
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.download([vid_url])
+                self._playlist_downloaded += 1
+                crashlog.write_log(f'Playlist: {self._playlist_downloaded}/{self._playlist_total} - {vid_title[:40]}')
+            except Exception as e:
+                crashlog.write_log(f'Playlist error ({vid_title[:30]}): {str(e)[:100]}')
+            time.sleep(1)
+        self._published = self._publish_new_files()
+        total = self._playlist_total
+        done = self._playlist_downloaded
+        Clock.schedule_once(lambda dt: self._info('Playlist completada',
+            f'{done}/{total} videos descargados exitosamente.'))
+        self.downloading = False
 
     def _analysis_done(self, video):
         self.selected = video
@@ -3883,6 +3985,7 @@ class M(ScreenManager):
                 title = ''
             self.get_screen('music').show_mini_player(title, playing=True)
             self._music_start_tick()
+            self._music_update_notification(title, playing=True)
             return True
         except Exception as e:
             crashlog.write_log('Error reproduciendo audio: ' + str(e)[:150])
@@ -3896,6 +3999,44 @@ class M(ScreenManager):
             self.get_screen('music')._mp_title.text = txt
         except Exception:
             pass
+
+    def _music_update_notification(self, title='', playing=True):
+        """Muestra/actualiza una notificacion de media en Android con controles basicos."""
+        if not IS_ANDROID:
+            return
+        try:
+            from jnius import autoclass, JavaRunnable
+            Context = autoclass('android.content.Context')
+            NotificationManager = autoclass('android.app.NotificationManager')
+            NotificationChannel = autoclass('android.app.NotificationChannel')
+            NotificationCompat = autoclass('android.support.v4.app.NotificationCompat')
+            Intent = autoclass('android.content.Intent')
+            PendingIntent = autoclass('android.app.PendingIntent')
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Icon = autoclass('android.R$drawable')
+            act = PythonActivity.mActivity
+            ctx = act.getApplicationContext()
+            nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE)
+            CHANNEL_ID = 'jonayo_music'
+            if not getattr(self, '_notification_channel_created', False):
+                channel = NotificationChannel(CHANNEL_ID, 'Reproductor', NotificationManager.IMPORTANCE_LOW)
+                nm.createNotificationChannel(channel)
+                self._notification_channel_created = True
+            open_intent = Intent(Intent.ACTION_VIEW)
+            open_intent.setClassName(act, act.getPackageName() + '.org.kivy.android.PythonActivity')
+            flags = PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+            pending_open = PendingIntent.getActivity(act, 0, open_intent, flags)
+            pause_action = NotificationCompat.Action(0, 'Pausar', pending_open)
+            builder = NotificationCompat.Builder(ctx, CHANNEL_ID)
+            builder.setSmallIcon(Icon.ic_media_play)
+            builder.setContentTitle('Jonayo Music')
+            builder.setContentText(title[:60] if title else 'Reproduciendo...')
+            builder.setContentIntent(pending_open)
+            builder.setAutoCancel(False)
+            builder.setOngoing(playing)
+            nm.notify(9999, builder.build())
+        except Exception as e:
+            crashlog.write_log('Notificacion error: ' + str(e)[:100])
 
     def _music_fallback_download(self, item):
         """Plan B: baja el audio a una carpeta temporal y lo reproduce local.
@@ -4060,10 +4201,20 @@ class M(ScreenManager):
     def music_next(self):
         if self._music_idx < len(self._music_queue) - 1:
             self._music_play_idx(self._music_idx + 1)
+            try:
+                t = self._music_queue[self._music_idx].get('title', '')
+                self._music_update_notification(t, playing=True)
+            except Exception:
+                pass
 
     def music_prev(self):
         if self._music_idx > 0:
             self._music_play_idx(self._music_idx - 1)
+            try:
+                t = self._music_queue[self._music_idx].get('title', '')
+                self._music_update_notification(t, playing=True)
+            except Exception:
+                pass
 
     def music_shuffle_toggle(self):
         self._shuffle = not self._shuffle
@@ -4093,6 +4244,15 @@ class M(ScreenManager):
         self._music_stop_internal()
         screen = self.get_screen('music')
         screen.hide_mini_player()
+        if IS_ANDROID:
+            try:
+                from jnius import autoclass
+                Context = autoclass('android.content.Context')
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                nm = PythonActivity.mActivity.getApplicationContext().getSystemService(Context.NOTIFICATION_SERVICE)
+                nm.cancel(9999)
+            except Exception:
+                pass
 
     # ─── FAVORITOS MUSICA ────────────────────────────────────
     def _load_favs(self):
@@ -4493,8 +4653,8 @@ class M(ScreenManager):
             ('Eliminar de la lista', delete_item),
         ]).open()
 
-    def _info(self, title, text):
-        dialog = InfoDialog(title, text)
+    def _info(self, title, text, on_ok=None, ok_text='Cerrar'):
+        dialog = InfoDialog(title, text, on_ok=on_ok, ok_text=ok_text)
         self._last_dialog = dialog
         dialog.open()
 

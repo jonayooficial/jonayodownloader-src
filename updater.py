@@ -84,26 +84,51 @@ def updater_error():
 
 
 def download_apk(apk_url, dest, on_progress=None):
-    """Descarga el APK a dest en streaming. Lanza excepción si falla."""
+    """Descarga el APK a dest con reintento y soporte de resume."""
     import requests
     import certifi
-    with requests.get(apk_url, timeout=60, stream=True,
-                      headers={"User-Agent": "Mozilla/5.0"},
-                      verify=certifi.where()) as r:
-        r.raise_for_status()
-        total = int(r.headers.get("Content-Length") or 0)
+    import time as _t
+    max_retries = 5
+    for attempt in range(max_retries):
         done = 0
-        with open(dest, "wb") as f:
-            for chunk in r.iter_content(chunk_size=1 << 15):
-                if not chunk:
-                    continue
-                f.write(chunk)
-                done += len(chunk)
-                if on_progress and total:
-                    try:
-                        on_progress(done, total)
-                    except Exception:
-                        pass
+        if attempt > 0:
+            try:
+                done = os.path.getsize(dest) if os.path.exists(dest) else 0
+            except Exception:
+                done = 0
+            _t.sleep(2 * attempt)
+        headers = {"User-Agent": "Mozilla/5.0"}
+        if done > 0:
+            headers["Range"] = f"bytes={done}-"
+        try:
+            with requests.get(apk_url, timeout=120, stream=True,
+                              headers=headers,
+                              verify=certifi.where()) as r:
+                if done > 0 and r.status_code == 206:
+                    pass
+                else:
+                    if done > 0:
+                        done = 0
+                    r.raise_for_status()
+                total = int(r.headers.get("Content-Length") or 0)
+                if done > 0 and r.status_code == 206:
+                    total += done
+                mode = "ab" if done > 0 and r.status_code == 206 else "wb"
+                with open(dest, mode) as f:
+                    for chunk in r.iter_content(chunk_size=1 << 18):
+                        if not chunk:
+                            continue
+                        f.write(chunk)
+                        done += len(chunk)
+                        if on_progress and total:
+                            try:
+                                on_progress(done, total)
+                            except Exception:
+                                pass
+            return dest
+        except Exception:
+            if attempt == max_retries - 1:
+                raise
     return dest
 
 
