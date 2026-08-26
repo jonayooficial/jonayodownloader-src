@@ -55,8 +55,7 @@ android.keystore = release.keystore
 android.keyalias = jonayodownloader
 android.storepass = changeit
 android.keypass = changeit
-android.release_artifact = apk
-p4a.release_artifact = jonayodownloader-release.apk
+android.release_artifact = release
 
 # Recipes locales: ffmpeg 6.1.2 (openssl fix en configure), ffpyplayer
 # (setup.py.patch), python3 (patch grp) y hostpython3 (swap wheel pip bundleada).
