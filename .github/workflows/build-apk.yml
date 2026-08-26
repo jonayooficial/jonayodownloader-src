@@ -39,12 +39,7 @@ jobs:
           ccache -M 500M || true
           df -h
 
-      - name: Clean buildozer cache
-        run: |
-          rm -rf ~/.buildozer
-          echo "Buildozer cache cleaned"
-
-      - name: Decode signing keystore
+- name: Decode signing keystore
         run: |
           echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | base64 -d > release.keystore
           ls -la release.keystore
