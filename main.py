@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.31'
+APP_VERSION = '2.0.32'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -1170,22 +1170,24 @@ class Music(Base):
         top.add_widget(heart_b)
         panel.add_widget(top)
 
-        cover_wrap = BoxLayout(size_hint_y=None, height=dp(170))
+        cover_wrap = BoxLayout(size_hint_y=None, height=dp(280), padding=(dp(12), 0))
         cardc = Card()
+        # rounded cover like screenshot (18dp)
+        rr(cardc, (0,0,0,0), 18)
         self._pl_cover = AsyncImage(size_hint=(1, 1), allow_stretch=True, keep_ratio=True,
                                     nocache=True)
         cardc.add_widget(self._pl_cover)
         cover_wrap.add_widget(cardc)
         panel.add_widget(cover_wrap)
 
-        self._pl_title = Label(text='', color=WHITE, font_size=sp(13), bold=True,
-                               halign='center', valign='middle', text_size=(None, None),
-                               size_hint_y=None, height=dp(28), shorten=True,
+        self._pl_title = Label(text='', color=WHITE, font_size=sp(16), bold=True,
+                               halign='center', valign='middle', text_size=(dp(300), None),
+                               size_hint_y=None, height=dp(32), shorten=True,
                                shorten_from='right')
         panel.add_widget(self._pl_title)
-        self._pl_channel = Label(text='', color=MUTED, font_size=sp(9.5),
+        self._pl_channel = Label(text='', color=RED, font_size=sp(11),
                                  halign='center', valign='middle',
-                                 size_hint_y=None, height=dp(18), shorten=True)
+                                 size_hint_y=None, height=dp(20), shorten=True)
         panel.add_widget(self._pl_channel)
 
         seek_row = BoxLayout(size_hint_y=None, height=dp(26), spacing=dp(8))
@@ -1286,23 +1288,40 @@ class Music(Base):
         q = getattr(mgr, '_music_queue', [])
         cur = getattr(mgr, '_music_idx', -1)
         if not q:
-            box.add_widget(Label(text='La cola esta vacia.', color=DIM,
+            box.add_widget(Label(text='No hay nada mas en la cola', color=WHITE, font_size=sp(13), bold=True,
+                                 halign='center', size_hint_y=None, height=dp(28)))
+            box.add_widget(Label(text="La lista de 'A continuacion' esta vacia. Anada canciones a la cola o reproduzca una playlist para ver sugerencias.",
+                                 color=MUTED, font_size=sp(9), halign='center', text_size=(dp(300), None),
                                  size_hint_y=None, height=dp(40)))
             return
+        # header like screenshot: A continuacion - 11 en total
+        box.add_widget(Label(text='A continuacion', color=WHITE, font_size=sp(13), bold=True, halign='left', size_hint_y=None, height=dp(24)))
+        box.add_widget(Label(text=f'{len(q)} en total - {max(0,len(q)-cur-1)} siguientes', color=MUTED, font_size=sp(9), halign='left', size_hint_y=None, height=dp(16)))
         for i, it in enumerate(q):
             active = (i == cur)
             es_sig = (i == cur + 1)
-            rowb = ClickableBox(bg=RED if (active or es_sig) else SUR, radius=10,
+            rowb = ClickableBox(bg=RED if es_sig else (SUR if not active else RED), radius=12,
                                 border=None if (active or es_sig) else BORDER,
-                                orientation='horizontal', padding=(dp(8), 0),
-                                spacing=dp(4), size_hint_y=None, height=dp(40))
-            tag = 'SONANDO' if active else ('SIGUIENTE' if es_sig else str(i + 1))
-            rowb.add_widget(Label(text=tag, color=(1, 1, 1, 1) if (active or es_sig) else MUTED,
-                                  font_size=sp(7.5) if (active or es_sig) else sp(9),
-                                  bold=True, size_hint_x=None, width=dp(62)))
-            rowb.add_widget(Label(text=safe_text(it.get('title', ''), 'Sin titulo'),
-                                  color=(1, 1, 1, 1) if (active or es_sig) else MUTED,
-                                  font_size=sp(9.3), shorten=True, shorten_from='right'))
+                                orientation='horizontal', padding=(dp(10), dp(6)),
+                                spacing=dp(8), size_hint_y=None, height=dp(56))
+            num = Label(text=str(i+1), color=MUTED, font_size=sp(10), size_hint_x=None, width=dp(24), halign='center')
+            if active: num.color = (1,1,1,1)
+            if es_sig: num.color = RED
+            rowb.add_widget(num)
+            col = BoxLayout(orientation='vertical', spacing=dp(2))
+            col.add_widget(Label(text=safe_text(it.get('title', ''), 'Sin titulo'),
+                                  color=WHITE if not es_sig else WHITE,
+                                  font_size=sp(11), bold=True, halign='left', shorten=True))
+            col.add_widget(Label(text=safe_text(it.get('channel',''), 'Desconocido'),
+                                  color=RED if es_sig else MUTED, font_size=sp(9), halign='left', shorten=True))
+            rowb.add_widget(col)
+            if es_sig:
+                badge = Label(text='SIGUIENTE', color=(1,1,1,1), font_size=sp(7), bold=True, size_hint_x=None, width=dp(68))
+                # badge bg
+                bbg = BoxLayout(size_hint_x=None, width=dp(72))
+                rr(bbg, RED, 6)
+                bbg.add_widget(badge)
+                rowb.add_widget(bbg)
             rowb.bind(on_release=lambda *_, idx=i: self._jump_and_refresh(idx))
             box.add_widget(rowb)
 
