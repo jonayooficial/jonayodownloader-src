@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.29'
+APP_VERSION = '2.0.30'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -2338,7 +2338,9 @@ class M(ScreenManager):
             except Exception:
                 return
             box.remove_widget(status)
-            if heights:
+            # Si solo detecta 360p (android muxed), mostrar igual opciones HD/FHD
+            # porque ios/tv si las tienen para streaming; fill no debe limitar a 360p
+            if heights and max(heights) > 360:
                 top = [h for h in heights][:6]
                 for h in reversed(top):
                     name = self.QNAMES.get(h, '')
@@ -2350,6 +2352,8 @@ class M(ScreenManager):
                 if len(rows.children) > 6:
                     pass
             else:
+                # Fallback honesto: si no detecta calidades altas, ofrecerlas igual
+                # (_resolve_stream intentara ios HLS para conseguirlas)
                 for q, desc in [('1080p', 'Full HD'), ('720p', 'HD'), ('480p', 'SD'), ('360p', 'Baja')]:
                     b = B(text=f'{q}  ·  {desc}', font_size=sp(12), color=WHITE,
                           size_hint_y=None, height=dp(50))
@@ -4019,8 +4023,16 @@ class M(ScreenManager):
             from jnius import autoclass, JavaRunnable
             Context = autoclass('android.content.Context')
             NotificationManager = autoclass('android.app.NotificationManager')
-            NotificationChannel = autoclass('android.app.NotificationChannel')
-            NotificationCompat = autoclass('android.support.v4.app.NotificationCompat')
+            Build = autoclass('android.os.Build')
+            # Android 8.0+ necesita canal; en 7.x no existe
+            if int(str(Build.VERSION.SDK_INT)) >= 26:
+                NotificationChannel = autoclass('android.app.NotificationChannel')
+            else:
+                NotificationChannel = None
+            try:
+                NotificationCompat = autoclass('androidx.core.app.NotificationCompat')
+            except Exception:
+                NotificationCompat = autoclass('android.support.v4.app.NotificationCompat')
             Intent = autoclass('android.content.Intent')
             PendingIntent = autoclass('android.app.PendingIntent')
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
@@ -4029,7 +4041,7 @@ class M(ScreenManager):
             ctx = act.getApplicationContext()
             nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE)
             CHANNEL_ID = 'jonayo_music'
-            if not getattr(self, '_notification_channel_created', False):
+            if not getattr(self, '_notification_channel_created', False) and NotificationChannel:
                 channel = NotificationChannel(CHANNEL_ID, 'Reproductor', NotificationManager.IMPORTANCE_LOW)
                 nm.createNotificationChannel(channel)
                 self._notification_channel_created = True
