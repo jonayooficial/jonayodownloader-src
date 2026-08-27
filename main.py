@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.32'
+APP_VERSION = '2.0.33'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -3964,7 +3964,7 @@ class M(ScreenManager):
                 ydl_opts = {'format': 'bestaudio[ext=m4a]/bestaudio/best',
                             'quiet': True, 'no_warnings': True,
                             'nocheckcertificate': True, 'socket_timeout': 15,
-                            'extractor_args': {'youtube': {'player_client': ['android_vr', 'ios']}}}
+                            'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios']}}}
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=False)
                 src = ''
