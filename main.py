@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.23'
+APP_VERSION = '2.0.28'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -1705,7 +1705,7 @@ class Settings(Base):
         self._row(c,'Telegram','t.me/Jonayogoth','open_telegram')
         self._row(c,'Compartir la app','',arrow=True)
         info=Card(size_hint_y=None,height=dp(88)); info.add_widget(Label(text=f'J Youtube Downloader\nVersión {APP_VERSION}\nCreada por Jonathan Fariña - Jonayo',color=MUTED,font_size=sp(9.5),halign='center',valign='middle')); c.add_widget(info)
-    def on_enter(self):
+    def on_enter(self, *args):
         if not getattr(self, '_built', False):
             self._built = True
             self.build()
