@@ -1681,25 +1681,38 @@ class Toggle(ButtonBehavior, Widget):
 
 class Settings(Base):
     def __init__(self,**kw):
-        super().__init__(**kw); self.content=ScrollView(do_scroll_x=False,bar_width=0); body=BoxLayout(orientation='vertical',padding=(dp(14),dp(10)),spacing=dp(9),size_hint_y=None); body.bind(minimum_height=body.setter('height')); self.body=body; self.content.add_widget(body); self.build(); self.add_widget(self.make())
+        super().__init__(**kw); self.content=ScrollView(do_scroll_x=False,bar_width=0); body=BoxLayout(orientation='vertical',padding=(dp(14),dp(10)),spacing=dp(9),size_hint_y=None); body.bind(minimum_height=body.setter('height')); self.body=body; self.content.add_widget(body); self.add_widget(self.make())
     def build(self):
-        c=self.body; head=BoxLayout(size_hint_y=None,height=dp(48)); head.add_widget(Label(text='Ajustes',color=WHITE,font_size=sp(23),bold=True,halign='left')); head.add_widget(Image(source=icon('settings'),size_hint=(None,None),size=(dp(28),dp(28)))); c.add_widget(head)
+        c=self.body; c.clear_widgets()
+        mgr = self.manager
+        _s = {}
+        if mgr and hasattr(mgr, '_app_settings') and mgr._app_settings:
+            _s = mgr._app_settings
+        head=BoxLayout(size_hint_y=None,height=dp(48)); head.add_widget(Label(text='Ajustes',color=WHITE,font_size=sp(23),bold=True,halign='left')); head.add_widget(Image(source=icon('settings'),size_hint=(None,None),size=(dp(28),dp(28)))); c.add_widget(head)
         self._section(c,'General')
         self._row(c,'Carpeta de descargas','Toca para elegir','pick_download_folder')
         self._row(c,'Abrir carpeta','Descargas/Jonayo_Downloads','open_folder')
-        self._row(c,'Descargar con datos móviles','Puede generar cargos adicionales',toggle=True,default=self.manager._app_settings.get('mobile_data',False),on_toggle=lambda v: self.manager._save_app_setting('mobile_data',bool(v)))
+        self._row(c,'Descargar con datos móviles','Puede generar cargos adicionales',toggle=True,default=_s.get('mobile_data',False),on_toggle=lambda v: self._save_setting('mobile_data',bool(v)))
         self._row(c,'Descargas simultáneas','3 descargas')
         self._row(c,'Tema','Oscuro')
-        self._row(c,'Seguir escuchando en segundo plano','La musica continua al salir de la app',toggle=True,default=getattr(self.manager,'bg_music',True),on_toggle=self._set_bg_music)
+        self._row(c,'Seguir escuchando en segundo plano','La musica continua al salir de la app',toggle=True,default=getattr(mgr,'bg_music',True) if mgr else True,on_toggle=self._set_bg_music)
         self._section(c,'Notificaciones')
-        self._row(c,'Notificaciones de descargas','Mostrar notificaciones de progreso',toggle=True,default=self.manager._app_settings.get('notifications',True),on_toggle=lambda v: self.manager._save_app_setting('notifications',bool(v)))
-        self._row(c,'Sonido al completar','Reproducir sonido al terminar',toggle=True,default=self.manager._app_settings.get('sound_done',True),on_toggle=lambda v: self.manager._save_app_setting('sound_done',bool(v)))
+        self._row(c,'Notificaciones de descargas','Mostrar notificaciones de progreso',toggle=True,default=_s.get('notifications',True),on_toggle=lambda v: self._save_setting('notifications',bool(v)))
+        self._row(c,'Sonido al completar','Reproducir sonido al terminar',toggle=True,default=_s.get('sound_done',True),on_toggle=lambda v: self._save_setting('sound_done',bool(v)))
         self._section(c,'Otros')
         self._row(c,'Buscar actualizaciones','v' + APP_VERSION,'check_update_now',arrow=True)
         self._row(c,'Sitio web','jonayo.vercel.app','open_web')
         self._row(c,'Telegram','t.me/Jonayogoth','open_telegram')
         self._row(c,'Compartir la app','',arrow=True)
         info=Card(size_hint_y=None,height=dp(88)); info.add_widget(Label(text=f'J Youtube Downloader\nVersión {APP_VERSION}\nCreada por Jonathan Fariña - Jonayo',color=MUTED,font_size=sp(9.5),halign='center',valign='middle')); c.add_widget(info)
+    def on_enter(self):
+        if not getattr(self, '_built', False):
+            self._built = True
+            self.build()
+    def _save_setting(self, key, val):
+        mgr = self.manager
+        if mgr and hasattr(mgr, '_save_app_setting'):
+            mgr._save_app_setting(key, val)
     def _section(self,c,text): c.add_widget(Label(text=text,color=WHITE,font_size=sp(14),bold=True,size_hint_y=None,height=dp(27),halign='left'))
     def _row(self,c,title,sub,action=None,toggle=False,default=False,arrow=False,on_toggle=None):
         r=Card(size_hint_y=None,height=dp(67),orientation='horizontal',spacing=dp(10),padding=(dp(12),dp(8)))
