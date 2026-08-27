@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.33'
+APP_VERSION = '2.0.34'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -3960,26 +3960,34 @@ class M(ScreenManager):
             return
         def _run():
             import yt_dlp
-            try:
-                ydl_opts = {'format': 'bestaudio[ext=m4a]/bestaudio/best',
-                            'quiet': True, 'no_warnings': True,
-                            'nocheckcertificate': True, 'socket_timeout': 15,
-                            'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios']}}}
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                src = ''
-                if info:
-                    src = info.get('url') or ''
-                    if not src:
-                        fmts = info.get('formats') or []
-                        for f in reversed(fmts):
-                            if f.get('url'):
-                                src = f['url']
-                                break
-                Clock.schedule_once(lambda dt: on_done(src))
-            except Exception as e:
-                crashlog.write_log('Error resolviendo audio: ' + str(e)[:150])
-                Clock.schedule_once(lambda dt: on_done(''))
+            last_err = ''
+            for client in [['tv', 'android_vr', 'ios'], ['mweb'], ['web']]:
+                try:
+                    ydl_opts = {'format': 'bestaudio[ext=m4a]/bestaudio/best',
+                                'quiet': True, 'no_warnings': True,
+                                'nocheckcertificate': True, 'socket_timeout': 15,
+                                'extractor_args': {'youtube': {'player_client': client}}}
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(url, download=False)
+                    src = ''
+                    if info:
+                        src = info.get('url') or ''
+                        if not src:
+                            fmts = info.get('formats') or []
+                            for f in reversed(fmts):
+                                if f.get('url'):
+                                    src = f['url']
+                                    break
+                    if src:
+                        Clock.schedule_once(lambda dt, s=src: on_done(s))
+                        return
+                except Exception as e:
+                    last_err = str(e)[:150]
+                    crashlog.write_log(f'Error resolviendo audio {client}: ' + last_err)
+                    continue
+            if last_err:
+                crashlog.write_crash('Error resolviendo audio: ' + last_err)
+            Clock.schedule_once(lambda dt: on_done(''))
         threading.Thread(target=_run, daemon=True).start()
 
     def _music_local_src(self, item):
@@ -4132,15 +4140,19 @@ class M(ScreenManager):
                 else:
                     raise RuntimeError('archivo no encontrado tras descargar')
             except Exception as e:
-                crashlog.write_log('Fallback audio fallo: ' + str(e)[:150])
-                Clock.schedule_once(lambda dt: self._music_alert_fail(item))
+                err = str(e)[:180]
+                crashlog.write_log('Fallback audio fallo: ' + err)
+                crashlog.write_crash('Fallback audio fallo: ' + err)
+                Clock.schedule_once(lambda dt, m=err: self._music_alert_fail(item, m))
         threading.Thread(target=work, daemon=True).start()
 
-    def _music_alert_fail(self, item):
+    def _music_alert_fail(self, item, err=''):
         title = safe_text((item or {}).get('title', ''), '')
         self._music_status(title)
-        self._info('Reproductor',
-                   'No se pudo reproducir esta cancion.\nVerifica tu conexion e intenta de nuevo.')
+        txt = 'No se pudo reproducir esta cancion.\nVerifica tu conexion e intenta de nuevo.'
+        if err:
+            txt += '\n\nDetalle: ' + err[:120]
+        self._info('Reproductor', txt)
 
     def _music_play_idx(self, idx):
         """Reproduce la cancion en la cola[idx].

@@ -6,8 +6,8 @@ package.domain = org.jonayo
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 
-version = 2.0.33
-version.release = 33
+version = 2.0.34
+version.release = 34
 
 # Requisitos. ffmpeg se compila desde la recipe local (6.1.2) de python-for-android
 # python3/hostpython3 pineados a 3.12.14 OBLIGATORIO: ffpyplayer 4.5.1 trae
