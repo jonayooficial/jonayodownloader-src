@@ -55,15 +55,15 @@ if IS_ANDROID:
 from kivy.graphics import Color, RoundedRectangle, Rectangle, Line, Triangle, Ellipse
 from kivy.uix.floatlayout import FloatLayout
 
-BG      = (0.07, 0.04, 0.05, 1)
-NAV     = (0.11, 0.07, 0.08, 1)
-SUR     = (0.16, 0.12, 0.13, 1)
-SUR2    = (0.20, 0.15, 0.16, 1)
-SUR3    = (0.26, 0.20, 0.21, 1)
-RED     = (0.90, 0.26, 0.28, 1)
-REDD    = (0.32, 0.08, 0.09, 1)
-WHITE   = (0.96, 0.94, 0.94, 1)
-MUTED   = (0.62, 0.57, 0.58, 1)
+BG      = (0.04, 0.04, 0.04, 1)
+NAV     = (0.08, 0.08, 0.08, 1)
+SUR     = (0.11, 0.11, 0.11, 1)
+SUR2    = (0.15, 0.15, 0.15, 1)
+SUR3    = (0.20, 0.20, 0.20, 1)
+RED     = (1.0, 0.18, 0.33, 1)
+REDD    = (0.35, 0.06, 0.12, 1)
+WHITE   = (1, 1, 1, 1)
+MUTED   = (0.56, 0.56, 0.56, 1)
 DIM     = (0.40, 0.44, 0.50, 1)
 BORDER  = (0.12, 0.15, 0.19, 1)
 GREEN   = (0.20, 0.82, 0.43, 1)
@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.34'
+APP_VERSION = '2.0.35'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
