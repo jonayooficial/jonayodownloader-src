@@ -71,7 +71,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.35'
+APP_VERSION = '2.0.36'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -3960,6 +3960,7 @@ class M(ScreenManager):
             return
         def _run():
             import yt_dlp
+            _patch_ytdlp_write_string()
             last_err = ''
             for client in [['tv', 'android_vr', 'ios'], ['mweb'], ['web']]:
                 try:
@@ -4115,6 +4116,7 @@ class M(ScreenManager):
 
         def work():
             try:
+                _patch_ytdlp_write_string()
                 opts = {'outtmpl': outtmpl,
                         'format': 'bestaudio[ext=m4a]/bestaudio/best',
                         'progress_hooks': [hook],
