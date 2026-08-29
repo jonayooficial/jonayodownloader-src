@@ -8,6 +8,15 @@ crashlog.install_crash_handler()
 crashlog.write_log("=== Inicio main.py (fusionado) v1.8.9 ===")
 
 import sys
+import io
+# Kivy/Android: sys.stdout.buffer es str -> rompe yt-dlp write_string
+try:
+    if hasattr(sys.stdout, 'buffer') and isinstance(getattr(sys.stdout, 'buffer', None), str):
+        sys.stdout = io.StringIO()
+    if hasattr(sys.stderr, 'buffer') and isinstance(getattr(sys.stderr, 'buffer', None), str):
+        sys.stderr = io.StringIO()
+except Exception:
+    pass
 import json
 import time
 import shutil
@@ -71,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.36'
+APP_VERSION = '2.0.37'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
