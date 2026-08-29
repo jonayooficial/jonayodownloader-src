@@ -1,7 +1,7 @@
 import os
 import threading
 
-VERSION = "2.0.37"
+VERSION = "2.0.38"
 API_URL = "https://api.github.com/repos/Jonayo/jonayodownloader-apk/releases/latest"
 DL_URL = "https://github.com/Jonayo/jonayodownloader-apk/releases/latest"
 _last_error = ""
