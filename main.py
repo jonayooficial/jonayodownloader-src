@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.39'
+APP_VERSION = '2.0.40'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -4153,6 +4153,39 @@ class M(ScreenManager):
             except Exception as e:
                 err = str(e)[:180]
                 crashlog.write_log('Fallback audio fallo: ' + err)
+                # Plan C: si es 403, probar Piped (Invidious) como bypass sin po_token
+                if '403' in err or 'Forbidden' in err:
+                    try:
+                        import requests, certifi, re
+                        vid = ''
+                        if 'v=' in url:
+                            vid = url.split('v=')[1].split('&')[0].split('?')[0]
+                        else:
+                            m = re.search(r'youtu\.be/([^?&/]+)', url)
+                            if m: vid = m.group(1)
+                        if vid:
+                            for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi.adminforge.de']:
+                                try:
+                                    r = requests.get(f'{host}/streams/{vid}', timeout=15, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
+                                    r.raise_for_status()
+                                    j = r.json()
+                                    audios = j.get('audioStreams') or []
+                                    # elegir m4a/opus con mayor bitrate
+                                    best = None
+                                    for a in audios:
+                                        if a.get('url'):
+                                            if best is None or (a.get('bitrate') or 0) > (best.get('bitrate') or 0):
+                                                best = a
+                                    if best and best.get('url'):
+                                        purl = best['url']
+                                        crashlog.write_log('Piped fallback ok: ' + purl[:80])
+                                        Clock.schedule_once(lambda dt, u=purl: self._music_load_and_play(u))
+                                        return
+                                except Exception as pe:
+                                    crashlog.write_log('Piped fallo: ' + str(pe)[:100])
+                                    continue
+                    except Exception as pe2:
+                        crashlog.write_log('Piped error: ' + str(pe2)[:100])
                 crashlog.write_crash('Fallback audio fallo: ' + err)
                 Clock.schedule_once(lambda dt, m=err: self._music_alert_fail(item, m))
         threading.Thread(target=work, daemon=True).start()
