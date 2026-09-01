@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.40'
+APP_VERSION = '2.0.41'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -2460,6 +2460,15 @@ class M(ScreenManager):
             except Exception as e:
                 last_err = e
                 continue
+        # Fallback Piped si todos los clientes dieron 403
+        try:
+            piped = self._piped_url(url, res)
+            if piped:
+                result = {'url': piped['url'], 'quality': f"{piped['height']}p" if piped.get('height') else f'{res}p', 'duration': piped.get('duration') or 0, 'title': piped.get('title') or ''}
+                self._stream_cache[cache_key] = result
+                return result
+        except Exception:
+            pass
         if last_err:
             raise last_err
         raise Exception('YouTube no devolvio un stream reproducible.')
@@ -2496,6 +2505,43 @@ class M(ScreenManager):
         self._stream_cache[key] = out
         self._trim_cache(self._stream_cache)
         return out
+
+    def _piped_url(self, url, res=720):
+        """Fallback Piped: devuelve {'url':..., 'height':..., 'title':...} o None. Directo sin po_token."""
+        try:
+            import requests, certifi, re
+            vid = ''
+            if 'v=' in url:
+                vid = url.split('v=')[1].split('&')[0].split('?')[0]
+            else:
+                m = re.search(r'youtu\.be/([^?&/]+)', url)
+                if m: vid = m.group(1)
+            if not vid: return None
+            for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi.adminforge.de']:
+                try:
+                    r = requests.get(f'{host}/streams/{vid}', timeout=12, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
+                    r.raise_for_status()
+                    j = r.json()
+                    vids = j.get('videoStreams') or []
+                    best = None
+                    for v in vids:
+                        h = v.get('height') or 0
+                        try: h = int(h)
+                        except: continue
+                        if h <= res and v.get('url'):
+                            if best is None or h > best.get('height',0):
+                                best = v
+                    if best:
+                        return {'url': best['url'], 'height': best.get('height') or res, 'duration': j.get('duration') or 0, 'title': j.get('title') or ''}
+                    # si no hay <=res, tomar el menor >res
+                    for v in sorted(vids, key=lambda x: x.get('height') or 9999):
+                        if v.get('url'):
+                            return {'url': v['url'], 'height': v.get('height') or res, 'duration': j.get('duration') or 0, 'title': j.get('title') or ''}
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return None
 
     def play_stream(self, video, quality='720p'):
         """Streaming real: resuelve la URL temporal y la entrega a ffpyplayer."""
