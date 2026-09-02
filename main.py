@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.41'
+APP_VERSION = '2.0.42'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -2543,6 +2543,57 @@ class M(ScreenManager):
             pass
         return None
 
+    def _piped_fallback(self, url, mode, quality):
+        """Descarga via Piped cuando yt-dlp da 403. True si pudo descargar."""
+        import re, requests, certifi, subprocess, tempfile
+        m = re.search(r'(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})', url)
+        if not m: return False
+        vid = m.group(1)
+        try:
+            r = requests.get(f'https://pipedapi.kavin.rocks/streams/{vid}', timeout=15, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
+            r.raise_for_status()
+            j = r.json()
+            title = re.sub(r'[\\/*?:"<>|]', '', j.get('title','video'))[:80] or vid
+            def dl_stream(surl, out_path):
+                with requests.get(surl, stream=True, timeout=30, headers={'User-Agent': 'Mozilla/5.0'}, verify=certifi.where()) as s:
+                    s.raise_for_status()
+                    with open(out_path, 'wb') as f:
+                        for chunk in s.iter_content(8192):
+                            if self.cancel_event.is_set(): raise InterruptedError('cancelled')
+                            if chunk: f.write(chunk)
+            if mode == 'audio':
+                streams = sorted(j.get('audioStreams') or [], key=lambda x: int(x.get('bitrate') or 0), reverse=True)
+                if not streams: return False
+                out = os.path.join(self.download_path, f'{title}.mp3')
+                tmp = out if streams[0]['url'].endswith('.mp3') else out.replace('.mp3', '.m4a')
+                dl_stream(streams[0]['url'], tmp)
+                if tmp != out:
+                    ff = self._ensure_ffmpeg()
+                    subprocess.run([ff or 'ffmpeg', '-y', '-i', tmp, out, '-q:a', '0'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    try: os.remove(tmp)
+                    except: pass
+                return True
+            else:
+                res = int(str(quality or '720p').replace('p','') or 720)
+                v_streams = [s for s in j.get('videoStreams') or [] if s.get('height') and s.get('url')]
+                v_streams = [s for s in v_streams if int(s['height']) <= res]
+                v_streams.sort(key=lambda x: int(x['height']), reverse=True)
+                a_streams = sorted(j.get('audioStreams') or [], key=lambda x: int(x.get('bitrate') or 0), reverse=True)
+                if not v_streams or not a_streams: return False
+                v_url, a_url = v_streams[0]['url'], a_streams[0]['url']
+                out = os.path.join(self.download_path, f'{title}.mp4')
+                tmp_v = os.path.join(tempfile.gettempdir(), f'{vid}_v.mp4')
+                tmp_a = os.path.join(tempfile.gettempdir(), f'{vid}_a.m4a')
+                dl_stream(v_url, tmp_v); dl_stream(a_url, tmp_a)
+                ff = self._ensure_ffmpeg()
+                subprocess.run([ff or 'ffmpeg', '-y', '-i', tmp_v, '-i', tmp_a, '-c', 'copy', out], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                try: os.remove(tmp_v); os.remove(tmp_a)
+                except: pass
+                return True
+        except Exception as e:
+            crashlog.write_log('Piped fallback fallo: ' + str(e)[:150])
+            return False
+
     def play_stream(self, video, quality='720p'):
         """Streaming real: resuelve la URL temporal y la entrega a ffpyplayer."""
         self._remove_from_queue(video)
@@ -3354,6 +3405,14 @@ class M(ScreenManager):
             if self.cancel_event.is_set():
                 Clock.schedule_once(lambda dt: self._cancelled())
                 return
+            if '403' in str(e) or 'Forbidden' in str(e):
+                try:
+                    if self._piped_fallback(url, self.current_mode, self.current_quality):
+                        self._published = self._publish_new_files()
+                        Clock.schedule_once(lambda dt: self._finish())
+                        return
+                except Exception as pe:
+                    err = f'Piped fallo: {str(pe)[:100]} | {err}'
             crashlog.write_log('Error descarga: ' + err + '\n' + traceback.format_exc())
             Clock.schedule_once(lambda dt, m=err: self._download_error(m))
 
