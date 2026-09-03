@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.42'
+APP_VERSION = '2.0.43'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -2047,7 +2047,7 @@ class M(ScreenManager):
                 'extract_flat': True, 'playlistend': 8,
                 'check_formats': False, 'nocheckcertificate': True,
                 'socket_timeout': 10,
-                'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios', 'mweb', 'web']}},
+                'extractor_args': {'youtube': {'player_client': ['visionos', 'tv', 'web_embedded']}},
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 results = ydl.extract_info('ytsearch8:' + query, download=False)
@@ -2416,9 +2416,11 @@ class M(ScreenManager):
         if cached and cached.get('url'):
             return cached
         attempts = [
-            # (selector, cliente)
-            (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}][vcodec!=none][acodec!=none]', 'android_vr'),
-            (f'best[height<={res}]/best[height<={res}]', 'ios'),
+            # POT-free primero (visionos/tv/web_embedded no piden po_token)
+            (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]/best', 'visionos'),
+            (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]/best', 'tv'),
+            (f'best[height<={res}]/best[height<={res}]', 'web_embedded'),
+            (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]', 'android_vr'),
         ]
         last_err = None
         for fmt, client in attempts:
@@ -2486,7 +2488,7 @@ class M(ScreenManager):
             'quiet': True, 'no_warnings': True, 'noplaylist': True,
             'skip_download': True, 'nocheckcertificate': True,
             'socket_timeout': 15, 'check_formats': False,
-            'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios', 'mweb', 'web']}},
+            'extractor_args': {'youtube': {'player_client': ['visionos', 'tv', 'web_embedded']}},
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -2517,7 +2519,7 @@ class M(ScreenManager):
                 m = re.search(r'youtu\.be/([^?&/]+)', url)
                 if m: vid = m.group(1)
             if not vid: return None
-            for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi.adminforge.de']:
+            for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee']:
                 try:
                     r = requests.get(f'{host}/streams/{vid}', timeout=12, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
                     r.raise_for_status()
@@ -2549,10 +2551,22 @@ class M(ScreenManager):
         m = re.search(r'(?:v=|youtu\.be/|shorts/|embed/)([A-Za-z0-9_-]{11})', url)
         if not m: return False
         vid = m.group(1)
+        j = None
+        for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee']:
+            try:
+                r = requests.get(f'{host}/streams/{vid}', timeout=15, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
+                r.raise_for_status()
+                j = r.json()
+                if j.get('title') or j.get('videoStreams') or j.get('audioStreams'):
+                    break
+                j = None
+            except Exception as he:
+                crashlog.write_log(f'Piped host fallo {host}: ' + str(he)[:80])
+                j = None
+                continue
         try:
-            r = requests.get(f'https://pipedapi.kavin.rocks/streams/{vid}', timeout=15, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
-            r.raise_for_status()
-            j = r.json()
+            if not j:
+                return False
             title = re.sub(r'[\\/*?:"<>|]', '', j.get('title','video'))[:80] or vid
             def dl_stream(surl, out_path):
                 with requests.get(surl, stream=True, timeout=30, headers={'User-Agent': 'Mozilla/5.0'}, verify=certifi.where()) as s:
@@ -2642,7 +2656,7 @@ class M(ScreenManager):
                 opts={'outtmpl':os.path.join(out_dir,'%(title).80s.%(ext)s'),
                       'progress_hooks':[hook],'quiet':True,'no_warnings':True,
                       'nocheckcertificate':True,'socket_timeout':20,
-                      'extractor_args':{'youtube':{'player_client':['tv','android_vr','ios','mweb','web']}},
+                      'extractor_args':{'youtube':{'player_client':['visionos','tv','web_embedded']}},
                       'format':f'bestvideo[height<={int(str(quality).replace("p","") or 720)}]+bestaudio/best[height<={int(str(quality).replace("p","") or 720)}]/best',
                       'merge_output_format':'mp4'}
                 ff=self._ensure_ffmpeg()
@@ -3128,17 +3142,51 @@ class M(ScreenManager):
         try:
             Clock.schedule_once(lambda dt: analyze.set_step(0))
             is_playlist = 'list=' in url or '/playlist' in url
-            opts = {
-                'quiet': True, 'no_warnings': True,
-                'noplaylist': False if is_playlist else True,
-                'skip_download': True, 'nocheckcertificate': True,
-                'socket_timeout': 15, 'extract_flat': False,
-                'check_formats': False,
-                'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios', 'mweb', 'web'], 'player_skip': ['webpage']}},
-            }
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                Clock.schedule_once(lambda dt: analyze.set_step(1))
-                info = ydl.extract_info(url, download=False)
+            info = None
+            last_err = None
+            for _cl in [['visionos'], ['tv'], ['web_embedded'], ['android_vr']]:
+                try:
+                    opts = {
+                        'quiet': True, 'no_warnings': True,
+                        'noplaylist': False if is_playlist else True,
+                        'skip_download': True, 'nocheckcertificate': True,
+                        'socket_timeout': 15, 'extract_flat': False,
+                        'check_formats': False,
+                        'extractor_args': {'youtube': {'player_client': _cl, 'player_skip': ['webpage']}},
+                    }
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        Clock.schedule_once(lambda dt: analyze.set_step(1))
+                        info = ydl.extract_info(url, download=False)
+                    if info:
+                        break
+                except Exception as ce:
+                    last_err = ce
+                    crashlog.write_log(f'Analyze fallo {_cl}: ' + str(ce)[:100])
+                    continue
+            if not info and last_err and ('403' in str(last_err) or 'Forbidden' in str(last_err)):
+                # metadata via Piped para poder seguir a descarga/streaming
+                try:
+                    import re, requests, certifi
+                    _vid = ''
+                    if 'v=' in url:
+                        _vid = url.split('v=')[1].split('&')[0].split('?')[0]
+                    else:
+                        _m = re.search(r'youtu\.be/([^?&/]+)', url)
+                        if _m: _vid = _m.group(1)
+                    for _h in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de']:
+                        try:
+                            _r = requests.get(f'{_h}/streams/{_vid}', timeout=12, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
+                            _r.raise_for_status()
+                            _j = _r.json()
+                            if _j.get('title'):
+                                info = {'id': _vid, 'title': _j.get('title', 'Video'), 'duration': _j.get('duration') or 0, 'uploader': _j.get('uploader') or '', 'webpage_url': url, 'thumbnail': _j.get('thumbnailUrl') or '', '_piped': True}
+                                break
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+            if not info and last_err:
+                raise last_err
             if not info:
                 raise RuntimeError('No se pudo obtener la informacion.')
             if info.get('_type') == 'playlist' or info.get('entries'):
@@ -3213,7 +3261,7 @@ class M(ScreenManager):
                     'windowsfilenames': True, 'noprogress': True,
                     'format': 'bestvideo+bestaudio/best',
                     'merge_output_format': 'mp4',
-                    'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios', 'mweb', 'web']}},
+                    'extractor_args': {'youtube': {'player_client': ['visionos', 'tv', 'web_embedded']}},
                 }
                 if ffmpeg_bin:
                     opts['ffmpeg_location'] = ffmpeg_bin
@@ -3363,10 +3411,10 @@ class M(ScreenManager):
             'windowsfilenames': True,
             'logger': _YDL_Logger(),
             'noprogress': True,
-            # android_vr: version actual del cliente Android (reemplaza android
-            # deprecado que solo daba 360p muxed). ios: fallback que llega a 1080+.
-            # tv: dispositivos Android TV / smart TV.
-            'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios', 'mweb', 'web']}},
+            # POT-free secuencial: visionos/tv/web_embedded no piden po_token.
+            # NO usar bulk ['visionos','tv','web_embedded']: mezcla clientes
+            # con token (mweb/web) y dispara SABR/rate-limit.
+            'extractor_args': {'youtube': {'player_client': ['visionos']}},
         }
         if ffmpeg_bin:
             ydl_opts['ffmpeg_location'] = ffmpeg_bin
@@ -3383,9 +3431,23 @@ class M(ScreenManager):
             }]
 
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                self.current_ydl = ydl
-                ydl.download([url])
+            _dl_err = None
+            for _cl in [['visionos'], ['tv'], ['web_embedded'], ['android_vr']]:
+                try:
+                    ydl_opts['extractor_args'] = {'youtube': {'player_client': _cl}}
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        self.current_ydl = ydl
+                        ydl.download([url])
+                    _dl_err = None
+                    break
+                except Exception as _de:
+                    _dl_err = _de
+                    crashlog.write_log(f'Descarga fallo {_cl}: ' + str(_de)[:120])
+                    if '403' not in str(_de) and 'Forbidden' not in str(_de):
+                        raise
+                    continue
+            if _dl_err:
+                raise _dl_err
             self.current_ydl = None
             if self.cancel_event.is_set():
                 if self.paused:
@@ -4076,7 +4138,7 @@ class M(ScreenManager):
             import yt_dlp
             _patch_ytdlp_write_string()
             last_err = ''
-            for client in [['tv'], ['android_vr'], ['ios'], ['mweb'], ['web'], ['android'], ['android_music']]:
+            for client in [['visionos'], ['tv'], ['web_embedded'], ['android_vr']]:
                 try:
                     ydl_opts = {'format': 'bestaudio[ext=m4a]/bestaudio/best',
                                 'quiet': True, 'no_warnings': True,
@@ -4237,7 +4299,7 @@ class M(ScreenManager):
                         'quiet': True, 'no_warnings': True,
                         'nocheckcertificate': True, 'socket_timeout': 20,
                         'windowsfilenames': True,
-                        'extractor_args': {'youtube': {'player_client': ['tv', 'android_vr', 'ios', 'mweb', 'web']}}}
+                        'extractor_args': {'youtube': {'player_client': ['visionos', 'tv', 'web_embedded']}}}
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=True)
                 fn = ''
@@ -4269,7 +4331,7 @@ class M(ScreenManager):
                             m = re.search(r'youtu\.be/([^?&/]+)', url)
                             if m: vid = m.group(1)
                         if vid:
-                            for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi.adminforge.de']:
+                            for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee']:
                                 try:
                                     r = requests.get(f'{host}/streams/{vid}', timeout=15, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
                                     r.raise_for_status()

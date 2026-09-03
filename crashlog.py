@@ -203,7 +203,7 @@ def _dump_to_file(etype=None, value=None, tb=None):
             tb = "NoneType: None"
     except Exception:
         tb = "NoneType: None"
-    text = "Versión: J Youtube Downloader v2.0.42\n\n" + tb
+    text = "Versión: J Youtube Downloader v2.0.43\n\n" + tb
     write_crash(text)
     write_log("CRASH:\n" + tb)
     try:
@@ -218,7 +218,7 @@ def _thread_hook(args):
     try:
         tb = "".join(traceback.format_exception(args.exc_type, args.exc_value,
                                                 args.exc_traceback))
-        write_crash("Versión: J Youtube Downloader v2.0.42\n\n" + tb)
+        write_crash("Versión: J Youtube Downloader v2.0.43\n\n" + tb)
         write_log("CRASH:\n" + tb)
     except Exception:
         try:
@@ -248,7 +248,7 @@ def install_crash_handler():
                     else:
                         lines = traceback.format_exception(etype, value, tb)
                         tb_text = "".join(lines)
-                        text = "Versión: J Youtube Downloader v2.0.42\n\n" + tb_text
+                        text = "Versión: J Youtube Downloader v2.0.43\n\n" + tb_text
                         write_crash(text)
                         write_log("CRASH:\n" + tb_text)
                         try:
