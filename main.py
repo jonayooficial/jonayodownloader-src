@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.43'
+APP_VERSION = '2.0.44'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -1108,6 +1108,44 @@ class Music(Base):
         bot_row.add_widget(self._mp_time)
         mp.add_widget(bot_row)
         self.add_widget(mp)
+        # Swipe hacia arriba en el mini player abre el reproductor completo.
+        # (El tap en el titulo ya lo abre; el swipe funciona desde cualquier
+        # punto del mini player sin romper los botones: solo registra Y.)
+        self._mp_swipe_y = None
+        self._mp_swipe_x = None
+        _orig_down = mp.on_touch_down
+        _orig_up = mp.on_touch_up
+        def _mp_down(touch):
+            try:
+                if self._mp_visible and mp.opacity > 0 and mp.collide_point(*touch.pos):
+                    self._mp_swipe_y = touch.y
+                    self._mp_swipe_x = touch.x
+            except Exception:
+                pass
+            return _orig_down(touch)
+        def _mp_up(touch):
+            try:
+                res = _orig_up(touch)
+            except Exception:
+                res = False
+            try:
+                sy = self._mp_swipe_y
+                sx = self._mp_swipe_x
+                if self._mp_visible and mp.opacity > 0 and sy is not None and mp.collide_point(*touch.pos):
+                    dy = touch.y - sy
+                    dx = abs(touch.x - (sx if sx is not None else touch.x))
+                    if dy > dp(48) and dy > dx:
+                        self.show_player()
+                        self._mp_swipe_y = None
+                        self._mp_swipe_x = None
+                        return True
+            except Exception:
+                pass
+            self._mp_swipe_y = None
+            self._mp_swipe_x = None
+            return res
+        mp.on_touch_down = _mp_down
+        mp.on_touch_up = _mp_up
 
     def show_mini_player(self, title, playing=True):
         self._mp_title.text = title
@@ -4982,6 +5020,15 @@ class AppMain(App):
     def _on_keyboard(self, window, key, scancode, codepoint, modifiers):
         if key == 27:
             m = self.manager
+            # 1. Si el reproductor de musica expandido esta abierto, cerrarlo
+            # (antes caia a confirm_exit y parecia que pedia cerrar la app).
+            try:
+                ms = m.get_screen('music')
+                if getattr(ms, '_player', None) is not None and getattr(ms._player, '_opened', False):
+                    ms.close_player()
+                    return True
+            except Exception:
+                pass
             d = getattr(m, '_last_dialog', None)
             if d is not None and getattr(d, 'window', None):
                 try:
