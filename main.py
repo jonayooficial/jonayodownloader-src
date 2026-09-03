@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.44'
+APP_VERSION = '2.0.45'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -2100,6 +2100,34 @@ class M(ScreenManager):
         except Exception as e:
             err = str(e)[:150]
             crashlog.write_log("Error busqueda: " + err)
+            if '403' in str(e) or 'Forbidden' in str(e):
+                # fallback Piped search para no dejar la lista en blanco
+                try:
+                    import requests, certifi
+                    from urllib.parse import quote as _q
+                    items = []
+                    for _h in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee']:
+                        try:
+                            _r = requests.get(f'{_h}/search?q={_q(query)}&filter=videos', timeout=12, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
+                            _r.raise_for_status()
+                            _j = _r.json()
+                            _entries = _j.get('items') or _j.get('content') or []
+                            for _idx, _en in enumerate(_entries[:8]):
+                                _vid = _en.get('url', '').split('v=')[-1].split('&')[0] if 'v=' in str(_en.get('url','')) else str(_en.get('url','')).rstrip('/').split('/')[-1]
+                                if not _vid or len(_vid) != 11:
+                                    continue
+                                items.append({'title': _en.get('title', 'Sin titulo'), 'url': f'https://www.youtube.com/watch?v={_vid}', 'id': _vid, 'duration': '', 'channel': _en.get('uploaderName', ''), 'thumb': _en.get('thumbnail') or '', 'color': _idx % 5})
+                            if items:
+                                break
+                        except Exception:
+                            continue
+                    if items:
+                        self._search_cache[key] = {'time': time.time(), 'items': items}
+                        self._trim_cache(self._search_cache)
+                        Clock.schedule_once(lambda dt, it=items: self.get_screen('search').show_results(it))
+                        return
+                except Exception:
+                    pass
             Clock.schedule_once(lambda dt, m=err: self.get_screen('search').show_error(m))
 
     # ─── TENDENCIAS REAL ───────────────────────────────────────
@@ -2557,24 +2585,29 @@ class M(ScreenManager):
                 m = re.search(r'youtu\.be/([^?&/]+)', url)
                 if m: vid = m.group(1)
             if not vid: return None
-            for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee']:
+            for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee', 'https://pipedapi.reallyaweso.me', 'https://pipedapi.drgns.space', 'https://pipedapi.owo.si', 'https://api.piped.yt']:
                 try:
                     r = requests.get(f'{host}/streams/{vid}', timeout=12, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
                     r.raise_for_status()
                     j = r.json()
+                    if not j.get('title') and not j.get('videoStreams'):
+                        continue
                     vids = j.get('videoStreams') or []
+                    # preferir muxed (videoOnly==False, mp4) para que tenga audio
+                    muxed = [v for v in vids if v.get('url') and not v.get('videoOnly', True)]
+                    pool = muxed or [v for v in vids if v.get('url')]
                     best = None
-                    for v in vids:
+                    for v in pool:
                         h = v.get('height') or 0
                         try: h = int(h)
                         except: continue
-                        if h <= res and v.get('url'):
-                            if best is None or h > best.get('height',0):
+                        if h <= res:
+                            if best is None or h > (best.get('height') or 0):
                                 best = v
                     if best:
                         return {'url': best['url'], 'height': best.get('height') or res, 'duration': j.get('duration') or 0, 'title': j.get('title') or ''}
                     # si no hay <=res, tomar el menor >res
-                    for v in sorted(vids, key=lambda x: x.get('height') or 9999):
+                    for v in sorted(pool, key=lambda x: x.get('height') or 9999):
                         if v.get('url'):
                             return {'url': v['url'], 'height': v.get('height') or res, 'duration': j.get('duration') or 0, 'title': j.get('title') or ''}
                 except Exception:
@@ -2590,7 +2623,7 @@ class M(ScreenManager):
         if not m: return False
         vid = m.group(1)
         j = None
-        for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee']:
+        for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee', 'https://pipedapi.reallyaweso.me', 'https://pipedapi.drgns.space', 'https://pipedapi.owo.si', 'https://api.piped.yt']:
             try:
                 r = requests.get(f'{host}/streams/{vid}', timeout=15, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
                 r.raise_for_status()
@@ -3211,13 +3244,21 @@ class M(ScreenManager):
                     else:
                         _m = re.search(r'youtu\.be/([^?&/]+)', url)
                         if _m: _vid = _m.group(1)
-                    for _h in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de']:
+                    for _h in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee', 'https://pipedapi.reallyaweso.me', 'https://pipedapi.drgns.space', 'https://api.piped.yt']:
                         try:
                             _r = requests.get(f'{_h}/streams/{_vid}', timeout=12, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
                             _r.raise_for_status()
                             _j = _r.json()
                             if _j.get('title'):
-                                info = {'id': _vid, 'title': _j.get('title', 'Video'), 'duration': _j.get('duration') or 0, 'uploader': _j.get('uploader') or '', 'webpage_url': url, 'thumbnail': _j.get('thumbnailUrl') or '', '_piped': True}
+                                _hs = set()
+                                for _vf in (_j.get('videoStreams') or []):
+                                    try:
+                                        _hh = int(_vf.get('height') or 0)
+                                        if _hh >= 144 and _vf.get('url'):
+                                            _hs.add(_hh)
+                                    except Exception:
+                                        pass
+                                info = {'id': _vid, 'title': _j.get('title', 'Video'), 'duration': _j.get('duration') or 0, 'uploader': _j.get('uploader') or '', 'webpage_url': url, 'thumbnail': _j.get('thumbnailUrl') or '', '_piped': True, '_piped_heights': sorted(_hs, reverse=True)}
                                 break
                         except Exception:
                             continue
@@ -3239,7 +3280,7 @@ class M(ScreenManager):
             video = self._to_video(info, 0)
             video['url'] = info.get('webpage_url') or url
             try:
-                hs = set()
+                hs = set(info.get('_piped_heights') or [])
                 for f in (info.get('formats') or []):
                     h = f.get('height')
                     vc = str(f.get('vcodec') or 'none')
@@ -4200,6 +4241,33 @@ class M(ScreenManager):
                     last_err = str(e)[:150]
                     crashlog.write_log(f'Error resolviendo audio {client}: ' + last_err)
                     continue
+            # fallback Piped audio directo (sin yt-dlp) antes de rendirse
+            try:
+                import re, requests, certifi
+                _vid = ''
+                if 'v=' in url:
+                    _vid = url.split('v=')[1].split('&')[0].split('?')[0]
+                else:
+                    _m = re.search(r'youtu\.be/([^?&/]+)', url)
+                    if _m: _vid = _m.group(1)
+                if _vid:
+                    for _h in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee', 'https://pipedapi.reallyaweso.me', 'https://api.piped.yt']:
+                        try:
+                            _r = requests.get(f'{_h}/streams/{_vid}', timeout=12, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
+                            _r.raise_for_status()
+                            _j = _r.json()
+                            _auds = [a for a in (_j.get('audioStreams') or []) if a.get('url')]
+                            if not _auds:
+                                continue
+                            _auds.sort(key=lambda a: int(a.get('bitrate') or 0), reverse=True)
+                            _purl = _auds[0]['url']
+                            crashlog.write_log('Piped audio resolve ok: ' + _purl[:80])
+                            Clock.schedule_once(lambda dt, s=_purl: on_done(s))
+                            return
+                        except Exception:
+                            continue
+            except Exception:
+                pass
             if last_err:
                 crashlog.write_crash('Error resolviendo audio: ' + last_err)
             Clock.schedule_once(lambda dt: on_done(''))
@@ -4369,7 +4437,7 @@ class M(ScreenManager):
                             m = re.search(r'youtu\.be/([^?&/]+)', url)
                             if m: vid = m.group(1)
                         if vid:
-                            for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee']:
+                            for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee', 'https://pipedapi.reallyaweso.me', 'https://pipedapi.drgns.space', 'https://pipedapi.owo.si', 'https://api.piped.yt']:
                                 try:
                                     r = requests.get(f'{host}/streams/{vid}', timeout=15, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
                                     r.raise_for_status()
