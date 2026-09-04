@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.45'
+APP_VERSION = '2.0.46'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -2482,11 +2482,14 @@ class M(ScreenManager):
         if cached and cached.get('url'):
             return cached
         attempts = [
-            # POT-free primero (visionos/tv/web_embedded no piden po_token)
+            # POT-free primero (visionos/tv/web_embedded no piden po_token).
+            # web_safari HLS (m3u8) esta exento de PO-Token: ultimo recurso que
+            # casi siempre reproduce aunque los https den 403.
             (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]/best', 'visionos'),
             (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]/best', 'tv'),
             (f'best[height<={res}]/best[height<={res}]', 'web_embedded'),
             (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]', 'android_vr'),
+            ('best[protocol^=m3u8]/best', 'web_safari'),
         ]
         last_err = None
         for fmt, client in attempts:
@@ -3215,7 +3218,7 @@ class M(ScreenManager):
             is_playlist = 'list=' in url or '/playlist' in url
             info = None
             last_err = None
-            for _cl in [['visionos'], ['tv'], ['web_embedded'], ['android_vr']]:
+            for _cl in [['visionos'], ['tv'], ['web_embedded'], ['android_vr'], ['web_safari']]:
                 try:
                     opts = {
                         'quiet': True, 'no_warnings': True,
@@ -3511,7 +3514,7 @@ class M(ScreenManager):
 
         try:
             _dl_err = None
-            for _cl in [['visionos'], ['tv'], ['web_embedded'], ['android_vr']]:
+            for _cl in [['visionos'], ['tv'], ['web_embedded'], ['android_vr'], ['web_safari']]:
                 try:
                     ydl_opts['extractor_args'] = {'youtube': {'player_client': _cl}}
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -4217,7 +4220,7 @@ class M(ScreenManager):
             import yt_dlp
             _patch_ytdlp_write_string()
             last_err = ''
-            for client in [['visionos'], ['tv'], ['web_embedded'], ['android_vr']]:
+            for client in [['visionos'], ['tv'], ['web_embedded'], ['android_vr'], ['web_safari']]:
                 try:
                     ydl_opts = {'format': 'bestaudio[ext=m4a]/bestaudio/best',
                                 'quiet': True, 'no_warnings': True,
@@ -5076,6 +5079,11 @@ class AppMain(App):
                 pass
             raise
         self.manager = m
+        # yt-dlp en vivo: si una descarga previa dejo el motor nuevo, usarlo
+        # primero (sys.path) antes de que cualquier thread importe yt_dlp.
+        self._ensure_live_ytdlp()
+        # descargar el master nuevo 1 vez/dia en segundo plano (aplica al reiniciar)
+        Clock.schedule_once(lambda dt: self._update_live_ytdlp_bg(), 5)
 
         previous_crash = crashlog.read_crash()
         if previous_crash:
@@ -5084,6 +5092,76 @@ class AppMain(App):
         if check_for_update is not None:
             Clock.schedule_once(lambda dt: check_for_update(lambda u: m._on_update_check(u, auto=True)), 2)
         return m
+
+    def _ensure_live_ytdlp(self):
+        """Si una actualizacion previa dejo yt-dlp nuevo en user_data_dir,
+        ponerlo primero en sys.path antes de que se importe yt_dlp."""
+        try:
+            import sys as _sys
+            import os as _os
+            base = _os.path.join(self.user_data_dir, 'yt_dlp_live', 'yt-dlp-master')
+            if _os.path.isdir(_os.path.join(base, 'yt_dlp')) and base not in _sys.path:
+                _sys.path.insert(0, base)
+                try:
+                    import yt_dlp as _y
+                    crashlog.write_log('yt-dlp live: ' + str(getattr(_y, 'version', '?')))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _update_live_ytdlp_bg(self):
+        """Descarga el master de yt-dlp 1 vez/dia en segundo plano.
+        Asi YouTube no rompe la app hasta el proximo APK: aplica al reiniciar."""
+        try:
+            import os as _os
+            import time as _t
+            import json as _j
+            base = _os.path.join(self.user_data_dir, 'yt_dlp_live')
+            try:
+                with open(_os.path.join(base, 'state.json'), encoding='utf-8') as _f:
+                    _last = float((_j.load(_f) or {}).get('time', 0))
+                if _t.time() - _last < 24 * 3600:
+                    return
+            except Exception:
+                pass
+            import threading as _th
+            _th.Thread(target=self._fetch_live_ytdlp, daemon=True).start()
+        except Exception:
+            pass
+
+    def _fetch_live_ytdlp(self):
+        try:
+            import os as _os
+            import time as _t
+            import json as _j
+            import zipfile as _z
+            import urllib.request as _u
+            base = _os.path.join(self.user_data_dir, 'yt_dlp_live')
+            _os.makedirs(base, exist_ok=True)
+            _zp = _os.path.join(base, 'master.zip')
+            _req = _u.Request('https://github.com/yt-dlp/yt-dlp/archive/refs/heads/master.zip',
+                              headers={'User-Agent': 'Mozilla/5.0'})
+            with _u.urlopen(_req, timeout=90) as _r, open(_zp, 'wb') as _f:
+                while True:
+                    _ch = _r.read(1 << 18)
+                    if not _ch:
+                        break
+                    _f.write(_ch)
+            # extraer solo el paquete (ahorra espacio/tiempo en el telefono)
+            with _z.ZipFile(_zp) as _zf:
+                for _n in _zf.namelist():
+                    if _n.startswith('yt-dlp-master/yt_dlp/'):
+                        _zf.extract(_n, base)
+            try:
+                _os.remove(_zp)
+            except Exception:
+                pass
+            with open(_os.path.join(base, 'state.json'), 'w', encoding='utf-8') as _f:
+                _j.dump({'time': _t.time()}, _f)
+            crashlog.write_log('yt-dlp live descargado (aplica al reiniciar)')
+        except Exception as _e:
+            crashlog.write_log('yt-dlp live fallo: ' + str(_e)[:120])
 
     def _on_keyboard(self, window, key, scancode, codepoint, modifiers):
         if key == 27:
