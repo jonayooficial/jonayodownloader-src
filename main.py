@@ -2085,7 +2085,8 @@ class M(ScreenManager):
                 'extract_flat': True, 'playlistend': 8,
                 'check_formats': False, 'nocheckcertificate': True,
                 'socket_timeout': 10,
-                'extractor_args': {'youtube': {'player_client': ['visionos', 'tv', 'web_embedded']}},
+                # v2.0.47: android primero (05-09-2026 YouTube bloqueo al resto).
+                'extractor_args': {'youtube': {'player_client': ['android', 'android_vr', 'visionos', 'tv', 'web_embedded']}},
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 results = ydl.extract_info('ytsearch8:' + query, download=False)
@@ -2100,13 +2101,16 @@ class M(ScreenManager):
         except Exception as e:
             err = str(e)[:150]
             crashlog.write_log("Error busqueda: " + err)
-            if '403' in str(e) or 'Forbidden' in str(e):
+            # v2.0.47: Piped ante CUALQUIER error (antes solo 403; ahora hay
+            # 'reload page' y otros bloqueos que tambien lo necesitan).
+            if True:
                 # fallback Piped search para no dejar la lista en blanco
                 try:
                     import requests, certifi
                     from urllib.parse import quote as _q
                     items = []
-                    for _h in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee']:
+                    # v2.0.47: el unico Piped vivo (verificado 05-09-2026) primero.
+                    for _h in ['https://api.piped.private.coffee', 'https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de']:
                         try:
                             _r = requests.get(f'{_h}/search?q={_q(query)}&filter=videos', timeout=12, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
                             _r.raise_for_status()
@@ -2164,7 +2168,9 @@ class M(ScreenManager):
         try:
             ydl_opts = {'quiet': True, 'no_warnings': True, 'noplaylist': True,
                         'check_formats': False, 'nocheckcertificate': True,
-                        'socket_timeout': 15}
+                        'socket_timeout': 15,
+                        # v2.0.47: cliente default (web) bloqueado; android primero.
+                        'extractor_args': {'youtube': {'player_client': ['android', 'android_vr', 'visionos', 'tv', 'web_embedded']}}}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 results = ydl.extract_info('ytsearch10:trending videos now',
                                            download=False)
@@ -2482,13 +2488,14 @@ class M(ScreenManager):
         if cached and cached.get('url'):
             return cached
         attempts = [
-            # POT-free primero (visionos/tv/web_embedded no piden po_token).
-            # web_safari HLS (m3u8) esta exento de PO-Token: ultimo recurso que
-            # casi siempre reproduce aunque los https den 403.
+            # v2.0.47 (05-09-2026): YouTube bloqueo visionos/tv/embedded/safari.
+            # Los unicos que devuelven streams hoy son los android (360p).
+            # Se prueban primero para no dejar el reproductor en negro.
+            (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]/best', 'android'),
+            (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]/best', 'android_vr'),
             (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]/best', 'visionos'),
             (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]/best', 'tv'),
             (f'best[height<={res}]/best[height<={res}]', 'web_embedded'),
-            (f'best[height<={res}][vcodec!=none][acodec!=none]/best[height<={res}]', 'android_vr'),
             ('best[protocol^=m3u8]/best', 'web_safari'),
         ]
         last_err = None
@@ -2557,7 +2564,8 @@ class M(ScreenManager):
             'quiet': True, 'no_warnings': True, 'noplaylist': True,
             'skip_download': True, 'nocheckcertificate': True,
             'socket_timeout': 15, 'check_formats': False,
-            'extractor_args': {'youtube': {'player_client': ['visionos', 'tv', 'web_embedded']}},
+            # v2.0.47: android primero (resto bloqueado por YouTube).
+            'extractor_args': {'youtube': {'player_client': ['android', 'android_vr', 'visionos', 'tv', 'web_embedded']}},
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -2588,7 +2596,8 @@ class M(ScreenManager):
                 m = re.search(r'youtu\.be/([^?&/]+)', url)
                 if m: vid = m.group(1)
             if not vid: return None
-            for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee', 'https://pipedapi.reallyaweso.me', 'https://pipedapi.drgns.space', 'https://pipedapi.owo.si', 'https://api.piped.yt']:
+            # v2.0.47: el unico Piped vivo (verificado 05-09-2026) primero.
+            for host in ['https://api.piped.private.coffee', 'https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://pipedapi.reallyaweso.me', 'https://pipedapi.drgns.space', 'https://pipedapi.owo.si', 'https://api.piped.yt']:
                 try:
                     r = requests.get(f'{host}/streams/{vid}', timeout=12, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
                     r.raise_for_status()
@@ -2626,7 +2635,7 @@ class M(ScreenManager):
         if not m: return False
         vid = m.group(1)
         j = None
-        for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee', 'https://pipedapi.reallyaweso.me', 'https://pipedapi.drgns.space', 'https://pipedapi.owo.si', 'https://api.piped.yt']:
+        for host in ['https://api.piped.private.coffee', 'https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://pipedapi.reallyaweso.me', 'https://pipedapi.drgns.space', 'https://pipedapi.owo.si', 'https://api.piped.yt']:
             try:
                 r = requests.get(f'{host}/streams/{vid}', timeout=15, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
                 r.raise_for_status()
@@ -2730,7 +2739,8 @@ class M(ScreenManager):
                 opts={'outtmpl':os.path.join(out_dir,'%(title).80s.%(ext)s'),
                       'progress_hooks':[hook],'quiet':True,'no_warnings':True,
                       'nocheckcertificate':True,'socket_timeout':20,
-                      'extractor_args':{'youtube':{'player_client':['visionos','tv','web_embedded']}},
+                      # v2.0.47: android primero (resto bloqueado por YouTube).
+                'extractor_args':{'youtube':{'player_client':['android','android_vr','visionos','tv','web_embedded']}},
                       'format':f'bestvideo[height<={int(str(quality).replace("p","") or 720)}]+bestaudio/best[height<={int(str(quality).replace("p","") or 720)}]/best',
                       'merge_output_format':'mp4'}
                 ff=self._ensure_ffmpeg()
@@ -3218,7 +3228,8 @@ class M(ScreenManager):
             is_playlist = 'list=' in url or '/playlist' in url
             info = None
             last_err = None
-            for _cl in [['visionos'], ['tv'], ['web_embedded'], ['android_vr'], ['web_safari']]:
+            # v2.0.47: android primero (unicos que responden hoy); resto de respaldo.
+            for _cl in [['android'], ['android_vr'], ['visionos'], ['tv'], ['web_embedded'], ['web_safari']]:
                 try:
                     opts = {
                         'quiet': True, 'no_warnings': True,
@@ -3247,7 +3258,8 @@ class M(ScreenManager):
                     else:
                         _m = re.search(r'youtu\.be/([^?&/]+)', url)
                         if _m: _vid = _m.group(1)
-                    for _h in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee', 'https://pipedapi.reallyaweso.me', 'https://pipedapi.drgns.space', 'https://api.piped.yt']:
+                    # v2.0.47: el unico Piped vivo (verificado 05-09-2026) primero.
+                    for _h in ['https://api.piped.private.coffee', 'https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://pipedapi.reallyaweso.me', 'https://pipedapi.drgns.space', 'https://api.piped.yt']:
                         try:
                             _r = requests.get(f'{_h}/streams/{_vid}', timeout=12, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
                             _r.raise_for_status()
@@ -3343,7 +3355,8 @@ class M(ScreenManager):
                     'windowsfilenames': True, 'noprogress': True,
                     'format': 'bestvideo+bestaudio/best',
                     'merge_output_format': 'mp4',
-                    'extractor_args': {'youtube': {'player_client': ['visionos', 'tv', 'web_embedded']}},
+                    # v2.0.47: android primero (resto bloqueado por YouTube).
+                    'extractor_args': {'youtube': {'player_client': ['android', 'android_vr', 'visionos', 'tv', 'web_embedded']}},
                 }
                 if ffmpeg_bin:
                     opts['ffmpeg_location'] = ffmpeg_bin
@@ -3493,10 +3506,10 @@ class M(ScreenManager):
             'windowsfilenames': True,
             'logger': _YDL_Logger(),
             'noprogress': True,
-            # POT-free secuencial: visionos/tv/web_embedded no piden po_token.
+            # v2.0.47: android primero (unicos que responden hoy); resto de respaldo.
             # NO usar bulk ['visionos','tv','web_embedded']: mezcla clientes
             # con token (mweb/web) y dispara SABR/rate-limit.
-            'extractor_args': {'youtube': {'player_client': ['visionos']}},
+            'extractor_args': {'youtube': {'player_client': ['android']}},
         }
         if ffmpeg_bin:
             ydl_opts['ffmpeg_location'] = ffmpeg_bin
@@ -3514,7 +3527,8 @@ class M(ScreenManager):
 
         try:
             _dl_err = None
-            for _cl in [['visionos'], ['tv'], ['web_embedded'], ['android_vr'], ['web_safari']]:
+            # v2.0.47: android primero (unicos que responden hoy); resto de respaldo.
+            for _cl in [['android'], ['android_vr'], ['visionos'], ['tv'], ['web_embedded'], ['web_safari']]:
                 try:
                     ydl_opts['extractor_args'] = {'youtube': {'player_client': _cl}}
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -3525,8 +3539,8 @@ class M(ScreenManager):
                 except Exception as _de:
                     _dl_err = _de
                     crashlog.write_log(f'Descarga fallo {_cl}: ' + str(_de)[:120])
-                    if '403' not in str(_de) and 'Forbidden' not in str(_de):
-                        raise
+                    # v2.0.47: probar TODOS los clientes siempre (antes abortaba
+                    # ante errores no-403 como 'reload page'; hoy son la norma).
                     continue
             if _dl_err:
                 raise _dl_err
@@ -3549,7 +3563,8 @@ class M(ScreenManager):
             if self.cancel_event.is_set():
                 Clock.schedule_once(lambda dt: self._cancelled())
                 return
-            if '403' in str(e) or 'Forbidden' in str(e):
+            # v2.0.47: Piped ante CUALQUIER error de descarga (no solo 403).
+            if True:
                 try:
                     if self._piped_fallback(url, self.current_mode, self.current_quality):
                         self._published = self._publish_new_files()
@@ -4220,7 +4235,8 @@ class M(ScreenManager):
             import yt_dlp
             _patch_ytdlp_write_string()
             last_err = ''
-            for client in [['visionos'], ['tv'], ['web_embedded'], ['android_vr'], ['web_safari']]:
+            # v2.0.47: android primero (unicos que responden hoy); resto de respaldo.
+            for client in [['android'], ['android_vr'], ['visionos'], ['tv'], ['web_embedded'], ['web_safari']]:
                 try:
                     ydl_opts = {'format': 'bestaudio[ext=m4a]/bestaudio/best',
                                 'quiet': True, 'no_warnings': True,
@@ -4254,7 +4270,8 @@ class M(ScreenManager):
                     _m = re.search(r'youtu\.be/([^?&/]+)', url)
                     if _m: _vid = _m.group(1)
                 if _vid:
-                    for _h in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee', 'https://pipedapi.reallyaweso.me', 'https://api.piped.yt']:
+                    # v2.0.47: el unico Piped vivo (verificado 05-09-2026) primero.
+                    for _h in ['https://api.piped.private.coffee', 'https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://pipedapi.reallyaweso.me', 'https://api.piped.yt']:
                         try:
                             _r = requests.get(f'{_h}/streams/{_vid}', timeout=12, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
                             _r.raise_for_status()
@@ -4408,7 +4425,8 @@ class M(ScreenManager):
                         'quiet': True, 'no_warnings': True,
                         'nocheckcertificate': True, 'socket_timeout': 20,
                         'windowsfilenames': True,
-                        'extractor_args': {'youtube': {'player_client': ['visionos', 'tv', 'web_embedded']}}}
+                        # v2.0.47: android primero (resto bloqueado por YouTube).
+                        'extractor_args': {'youtube': {'player_client': ['android', 'android_vr', 'visionos', 'tv', 'web_embedded']}}}
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=True)
                 fn = ''
@@ -4440,7 +4458,8 @@ class M(ScreenManager):
                             m = re.search(r'youtu\.be/([^?&/]+)', url)
                             if m: vid = m.group(1)
                         if vid:
-                            for host in ['https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://api.piped.private.coffee', 'https://pipedapi.reallyaweso.me', 'https://pipedapi.drgns.space', 'https://pipedapi.owo.si', 'https://api.piped.yt']:
+                            # v2.0.47: el unico Piped vivo (verificado 05-09-2026) primero.
+                            for host in ['https://api.piped.private.coffee', 'https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks', 'https://piped-api.lunar.icu', 'https://pipedapi.adminforge.de', 'https://pipedapi.reallyaweso.me', 'https://pipedapi.drgns.space', 'https://pipedapi.owo.si', 'https://api.piped.yt']:
                                 try:
                                     r = requests.get(f'{host}/streams/{vid}', timeout=15, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
                                     r.raise_for_status()
