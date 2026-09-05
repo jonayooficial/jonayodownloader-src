@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.46'
+APP_VERSION = '2.0.48'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -2453,7 +2453,7 @@ class M(ScreenManager):
                     pass
             else:
                 # Fallback honesto: si no detecta calidades altas, ofrecerlas igual
-                # (_resolve_stream intentara ios HLS para conseguirlas)
+                # (_resolve_stream intentara el resto de clientes para conseguirlas)
                 for q, desc in [('1080p', 'Full HD'), ('720p', 'HD'), ('480p', 'SD'), ('360p', 'Baja')]:
                     b = B(text=f'{q}  ·  {desc}', font_size=sp(12), color=WHITE,
                           size_hint_y=None, height=dp(50))
@@ -3160,6 +3160,16 @@ class M(ScreenManager):
                     qlabel.text=safe_text(item.get('stream_quality','HD') if item else 'HD','HD')
                     if state['mode']=='video' and v.state=='play' and not state['hidden'] and (time.time()-last_touch[0])>3:
                         hide_controls()
+                    if state['mode']=='video' and v.state=='play' and (time.time()-t0[0])>8 and v.texture is None:
+                        # v2.0.48: el stream nunca cargo (403/expirado/CDN caido).
+                        # No dejar el player negro congelado: ir al fallback.
+                        d.dismiss()
+                        url=(item or {}).get('url') or ''
+                        if url:
+                            self._fallback_play_download(url, item, (item or {}).get('stream_quality','720p'))
+                        else:
+                            self._info('Reproductor','No se pudo cargar el stream de video.')
+                        return
                     if dur and pos >= dur-0.7 and not state['ended']:
                         state['ended']=True
                         if self.play_queue:
@@ -3248,7 +3258,8 @@ class M(ScreenManager):
                     last_err = ce
                     crashlog.write_log(f'Analyze fallo {_cl}: ' + str(ce)[:100])
                     continue
-            if not info and last_err and ('403' in str(last_err) or 'Forbidden' in str(last_err)):
+            # v2.0.48: Piped ante CUALQUIER error (no solo 403).
+            if not info and last_err:
                 # metadata via Piped para poder seguir a descarga/streaming
                 try:
                     import re, requests, certifi
@@ -3424,7 +3435,9 @@ class M(ScreenManager):
         try:
             ydl_opts = {'quiet': True, 'no_warnings': True, 'noplaylist': True,
                         'check_formats': False, 'nocheckcertificate': True,
-                        'socket_timeout': 15, 'extract_flat': True}
+                        'socket_timeout': 15, 'extract_flat': True,
+                        # v2.0.48: android primero (default web bloqueado).
+                        'extractor_args': {'youtube': {'player_client': ['android', 'android_vr', 'visionos', 'tv', 'web_embedded']}}}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 results = ydl.extract_info('ytsearch10:' + query, download=False)
             items = []
@@ -3446,6 +3459,34 @@ class M(ScreenManager):
         except Exception as e:
             err = str(e)[:150]
             crashlog.write_log("Error musica: " + err)
+            # v2.0.48: fallback Piped antes de mostrar error (misma idea que search).
+            try:
+                import requests, certifi
+                from urllib.parse import quote as _q
+                items = []
+                for _h in ['https://api.piped.private.coffee', 'https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks']:
+                    try:
+                        _r = requests.get(f'{_h}/search?q={_q(query)}&filter=music_songs', timeout=12, verify=certifi.where(), headers={'User-Agent': 'Mozilla/5.0'})
+                        _r.raise_for_status()
+                        _j = _r.json()
+                        for _idx, _en in enumerate((_j.get('items') or _j.get('content') or [])[:10]):
+                            _vid = _en.get('url', '').split('v=')[-1].split('&')[0] if 'v=' in str(_en.get('url','')) else str(_en.get('url','')).rstrip('/').split('/')[-1]
+                            if not _vid or len(_vid) != 11:
+                                continue
+                            _dur = _en.get('duration') or 0
+                            try: _dur = int(_dur)
+                            except Exception: _dur = 0
+                            _dtxt = f"{_dur // 60}:{_dur % 60:02d}" if _dur and _dur > 0 else ''
+                            items.append({'title': _en.get('title', 'Sin titulo'), 'url': f'https://www.youtube.com/watch?v={_vid}', 'duration': _dtxt, 'channel': _en.get('uploaderName', ''), 'color': _idx % 5})
+                        if items:
+                            break
+                    except Exception:
+                        continue
+                if items:
+                    Clock.schedule_once(lambda dt, it=items: self.get_screen('music').show_results(it))
+                    return
+            except Exception:
+                pass
             Clock.schedule_once(lambda dt: self.get_screen('music').show_error(err))
 
     def music_download(self, item):
@@ -4447,8 +4488,8 @@ class M(ScreenManager):
             except Exception as e:
                 err = str(e)[:180]
                 crashlog.write_log('Fallback audio fallo: ' + err)
-                # Plan C: si es 403, probar Piped (Invidious) como bypass sin po_token
-                if '403' in err or 'Forbidden' in err:
+                # Plan C (v2.0.48): Piped ante CUALQUIER error (no solo 403).
+                if True:
                     try:
                         import requests, certifi, re
                         vid = ''
