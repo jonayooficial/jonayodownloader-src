@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.56'
+APP_VERSION = '2.0.57'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -5310,9 +5310,21 @@ class M(ScreenManager):
         except Exception as e:
             err = str(e)[:120]
             crashlog.write_log('Installer sesion fallo: ' + err)
-            self._info('Instala el APK',
-                       f'No se pudo iniciar la instalacion automatica ({err}).\n'
-                       'Instalalo tocando el archivo en Descargas/Jonayo_Downloads.')
+            # v2.0.57: el APK baja a carpeta privada (invisible). Copiarlo a
+            # Descargas publicas para que el mensaje manual sea verdad.
+            try:
+                res = self._publish_to_downloads(apk_path, 'jonayodownloader-update.apk')
+            except Exception as e2:
+                crashlog.write_log('Respaldo APK a Descargas fallo: ' + str(e2)[:120])
+                res = None
+            if res:
+                self._info('Instala el APK',
+                           f'No se pudo iniciar la instalacion automatica ({err}).\n'
+                           'Instalalo tocando el archivo en Descargas/Jonayo_Downloads.')
+            else:
+                self._info('Instala el APK',
+                           f'No se pudo iniciar la instalacion automatica ({err}).\n'
+                           'Bajalo desde:\nhttps://github.com/jonayooficial/jonayodownloader-apk/releases')
             return
         self._info('Instala el APK',
                    'No se pudo iniciar la instalacion automatica.\n'
