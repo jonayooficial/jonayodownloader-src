@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.53'
+APP_VERSION = '2.0.54'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -376,6 +376,44 @@ def fmt_size(num_bytes, is_approx=False):
     elif num_bytes >= 1024:
         return f"{prefix}{num_bytes / 1024:.0f} KB"
     return f"{prefix}{num_bytes} B"
+
+
+class Chevron(Widget):
+    """Flecha '^'/'v' dibujada con canvas (sin assets ni fuentes). direction='up'|'down'."""
+    def __init__(self, direction='up', color=(1, 1, 1, 0.85), **kw):
+        super().__init__(**kw)
+        self.direction = direction
+        with self.canvas:
+            Color(*color)
+            self._ln = Line(width=dp(2.2), cap='round', joint='round')
+        self.bind(pos=self._draw, size=self._draw)
+        self._draw()
+    def _draw(self, *_):
+        try:
+            s = min(self.width, self.height) * 0.30
+            cx, cy = self.center_x, self.center_y
+            if self.direction == 'up':
+                pts = [cx - s, cy - s * 0.6, cx, cy + s * 0.6, cx + s, cy - s * 0.6]
+            else:
+                pts = [cx - s, cy + s * 0.6, cx, cy - s * 0.6, cx + s, cy + s * 0.6]
+            self._ln.points = pts
+        except Exception:
+            pass
+
+
+def btn_chevron(btn, direction='up', size=None):
+    """Flecha canvas centrada dentro de un boton (igual que btn_img pero sin PNG)."""
+    size = size or dp(18)
+    ch = Chevron(direction, size_hint=(None, None), size=(size, size))
+    def _sync(*_):
+        try:
+            ch.center = btn.center
+        except Exception:
+            pass
+    btn.bind(pos=_sync, size=_sync)
+    Clock.schedule_once(lambda dt: _sync(), 0)
+    btn.add_widget(ch)
+    return ch
 
 
 class ClickableBox(ButtonBehavior, BoxLayout):
@@ -1098,6 +1136,11 @@ class Music(Base):
                                   pos_hint={'bottom': 1}, opacity=0)
         rr(mp, (0, 0, 0, 0.92), 0)
         top_row = BoxLayout(size_hint_y=None, height=dp(32), padding=(dp(8), 0), spacing=dp(6))
+        exp_b = B(text='', size_hint_x=None, width=dp(34))
+        rr(exp_b, (1, 1, 1, 0.10), 17, None)
+        btn_chevron(exp_b, 'up', dp(16))
+        exp_b.bind(on_release=lambda *_: self.show_player())
+        top_row.add_widget(exp_b)
         self._mp_title_wrap = ClickableBox(bg=(0, 0, 0, 0), border=None, size_hint_x=1)
         self._mp_title = Label(text='', color=WHITE, font_size=sp(10), bold=True,
                                halign='left', valign='middle', shorten=True)
@@ -1247,6 +1290,11 @@ class Music(Base):
         btn_img(back_b, 'close', dp(15))
         back_b.bind(on_release=lambda *_: self.close_player())
         top.add_widget(back_b)
+        down_b = B(text='', size_hint_x=None, width=dp(38))
+        rr(down_b, SUR2, 19, BORDER)
+        btn_chevron(down_b, 'down', dp(16))
+        down_b.bind(on_release=lambda *_: self.close_player())
+        top.add_widget(down_b)
         top.add_widget(Label(text='Reproduciendo', color=MUTED, font_size=sp(11), halign='left'))
         heart_b = B(text='', size_hint_x=None, width=dp(38))
         rr(heart_b, SUR2, 19, BORDER)
