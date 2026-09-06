@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.55'
+APP_VERSION = '2.0.56'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -5273,6 +5273,34 @@ class M(ScreenManager):
         if not IS_ANDROID:
             self._info('Instala el APK', 'Abri el archivo para instalar:\n' + apk_path)
             return
+        # v2.0.56: sin el permiso "instalar apps desconocidas" el instalador
+        # falla siempre. Detectarlo y mandar directo al ajuste correspondiente.
+        try:
+            from jnius import autoclass as _ac
+            _act = _ac('org.kivy.android.PythonActivity').mActivity
+            try:
+                _can = _act.getPackageManager().canRequestPackageInstalls()
+            except Exception:
+                _can = True
+            if not _can:
+                def _open_sources(_dt=None):
+                    try:
+                        Intent2 = _ac('android.content.Intent')
+                        Settings = _ac('android.provider.Settings')
+                        Uri2 = _ac('android.net.Uri')
+                        it = Intent2(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                     Uri2.parse('package:' + _act.getPackageName()))
+                        it.addFlags(Intent2.FLAG_ACTIVITY_NEW_TASK)
+                        _act.startActivity(it)
+                    except Exception as e2:
+                        crashlog.write_log('No se pudo abrir ajustes: ' + str(e2)[:120])
+                self._info('Permiso necesario',
+                           'Android bloquea la instalacion.\nActiva "Permitir de esta fuente" y toca Actualizar de nuevo.',
+                           on_ok=lambda: _open_sources(), ok_text='Abrir ajustes')
+                return
+        except Exception as e0:
+            crashlog.write_log('Chequeo permiso instalacion: ' + str(e0)[:100])
+            pass
         # v2.0.51: sesion directa (anda en Android nuevos).
         # v2.0.52: sin fallback ACTION_VIEW (las URIs MediaStore dan "error de
         # analisis" en Android nuevos: mejor mensaje manual directo).
@@ -5280,7 +5308,12 @@ class M(ScreenManager):
             if self._install_via_session(apk_path):
                 return
         except Exception as e:
-            crashlog.write_log('Installer sesion fallo: ' + str(e)[:150])
+            err = str(e)[:120]
+            crashlog.write_log('Installer sesion fallo: ' + err)
+            self._info('Instala el APK',
+                       f'No se pudo iniciar la instalacion automatica ({err}).\n'
+                       'Instalalo tocando el archivo en Descargas/Jonayo_Downloads.')
+            return
         self._info('Instala el APK',
                    'No se pudo iniciar la instalacion automatica.\n'
                    'Instalalo tocando el archivo en Descargas/Jonayo_Downloads.')
