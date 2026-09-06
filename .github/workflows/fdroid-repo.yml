@@ -23,7 +23,7 @@ jobs:
         if: github.event_name == 'workflow_run'
         uses: actions/download-artifact@v4
         with:
-          name: apk
+          name: apk-release
           path: incoming
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
@@ -38,7 +38,7 @@ jobs:
             RUN_ID=$(gh api "repos/${{ github.repository }}/actions/workflows/build-debug.yml/runs?per_page=1&status=success" --jq '.workflow_runs[0].id // empty')
             gh run download "$RUN_ID" -n apk-debug -D incoming
           else
-            gh run download "$RUN_ID" -n apk -D incoming
+            gh run download "$RUN_ID" -n apk-release -D incoming
           fi
 
       - uses: actions/setup-python@v5
