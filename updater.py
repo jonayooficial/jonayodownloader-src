@@ -1,7 +1,7 @@
 import os
 import threading
 
-VERSION = "2.0.50"
+VERSION = "2.0.51"
 API_URL = "https://api.github.com/repos/jonayooficial/jonayodownloader-apk/releases/latest"
 DL_URL = "https://github.com/jonayooficial/jonayodownloader-apk/releases/latest"
 _last_error = ""
@@ -125,6 +125,10 @@ def download_apk(apk_url, dest, on_progress=None):
                                 on_progress(done, total)
                             except Exception:
                                 pass
+                # v2.0.51: si el servidor corto el stream, el archivo queda trunco
+                # y el instalador da "error de analisis". Reintentar, no instalar.
+                if total and done != total:
+                    raise Exception(f'Descarga incompleta ({done}/{total} bytes).')
             return dest
         except Exception:
             if attempt == max_retries - 1:

@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.50'
+APP_VERSION = '2.0.51'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -5117,7 +5117,58 @@ class M(ScreenManager):
             dlg.dismiss()
         except Exception:
             pass
-        self._info('No se pudo actualizar', err + '\n\nDescargalo manual:\n' + 'https://github.com/jonayooficial/jonayodownloader-apk/releases')
+        self._info('No se pudo actualizar', err + '\n\nTip: tocá el APK en Descargas/Jonayo_Downloads para instalarlo manual.\n\nO bajalo de:\n' + 'https://github.com/jonayooficial/jonayodownloader-apk/releases')
+    def _install_via_session(self, apk_path):
+        """Instalacion moderna via PackageInstaller.Session (Android 5+).
+        Transmite el APK directo, sin FileProvider ni MediaStore: es el metodo
+        que no falla en Android nuevos (el ACTION_VIEW legacy da 'error de analisis').
+        Devuelve True si la sesion quedo comprometida; lanza excepcion si no."""
+        from jnius import autoclass
+        import shutil
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        activity = PythonActivity.mActivity
+        installer = activity.getPackageManager().getPackageInstaller()
+        PackageInstaller = autoclass('android.content.pm.PackageInstaller')
+        params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        try:
+            params.setRequestUpdateOwnership(True)
+        except Exception:
+            pass
+        session_id = installer.createSession(params)
+        session = installer.openSession(session_id)
+        try:
+            out = session.openWrite('apk', 0, -1)
+            with open(apk_path, 'rb') as f:
+                shutil.copyfileobj(f, out, 65536)
+            session.fsync(out)
+            out.close()
+        except Exception:
+            try:
+                session.close()
+            except Exception:
+                pass
+            try:
+                installer.abandonSession(session_id)
+            except Exception:
+                pass
+            raise
+        Intent = autoclass('android.content.Intent')
+        PendingIntent = autoclass('android.app.PendingIntent')
+        Build = autoclass('android.os.Build$VERSION')
+        launch = Intent(activity.getApplicationContext(), PythonActivity)
+        launch.setAction('org.jonayo.jonayodownloader2.INSTALL_RESULT')
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        flags = PendingIntent.FLAG_UPDATE_CURRENT
+        if Build.SDK_INT >= 31:
+            flags |= PendingIntent.FLAG_MUTABLE
+        pi = PendingIntent.getActivity(activity, session_id, launch, flags)
+        session.commit(pi.getIntentSender())
+        try:
+            session.close()
+        except Exception:
+            pass
+        return True
+
     def _launch_installer(self, apk_path, dlg):
         try:
             dlg.dismiss()
@@ -5126,6 +5177,13 @@ class M(ScreenManager):
         if not IS_ANDROID:
             self._info('Instala el APK', 'Abri el archivo para instalar:\n' + apk_path)
             return
+        # v2.0.51: primero sesion directa (anda en Android nuevos); si falla,
+        # fallback al ACTION_VIEW legacy.
+        try:
+            if self._install_via_session(apk_path):
+                return
+        except Exception as e:
+            crashlog.write_log('Installer sesion fallo, uso fallback: ' + str(e)[:150])
         uri = None
         try:
             res = self._publish_to_downloads(apk_path, 'jonayodownloader-update.apk')
