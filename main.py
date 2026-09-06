@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.54'
+APP_VERSION = '2.0.55'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -1132,15 +1132,21 @@ class Music(Base):
         box.bind(minimum_height=box.setter('height')); self.results_box = box; c.add_widget(box)
 
     def _build_mini_player(self):
-        self._mp = mp = BoxLayout(orientation='vertical', size_hint=(1, None), height=dp(64),
+        self._mp = mp = BoxLayout(orientation='vertical', size_hint=(1, None), height=dp(80),
                                   pos_hint={'bottom': 1}, opacity=0)
         rr(mp, (0, 0, 0, 0.92), 0)
+        # v2.0.55: manija central en el borde superior: avisa que deslizando
+        # hacia arriba se abre el reproductor (tambien abre con tap).
+        handle_row = BoxLayout(size_hint_y=None, height=dp(16), spacing=dp(6))
+        handle_row.add_widget(Widget())
+        handle_b = B(text='', size_hint=(None, None), size=(dp(64), dp(16)))
+        rr(handle_b, (1, 1, 1, 0.12), 8, None)
+        btn_chevron(handle_b, 'up', dp(11))
+        handle_b.bind(on_release=lambda *_: self.show_player())
+        handle_row.add_widget(handle_b)
+        handle_row.add_widget(Widget())
+        mp.add_widget(handle_row)
         top_row = BoxLayout(size_hint_y=None, height=dp(32), padding=(dp(8), 0), spacing=dp(6))
-        exp_b = B(text='', size_hint_x=None, width=dp(34))
-        rr(exp_b, (1, 1, 1, 0.10), 17, None)
-        btn_chevron(exp_b, 'up', dp(16))
-        exp_b.bind(on_release=lambda *_: self.show_player())
-        top_row.add_widget(exp_b)
         self._mp_title_wrap = ClickableBox(bg=(0, 0, 0, 0), border=None, size_hint_x=1)
         self._mp_title = Label(text='', color=WHITE, font_size=sp(10), bold=True,
                                halign='left', valign='middle', shorten=True)
