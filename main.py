@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.51'
+APP_VERSION = '2.0.52'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -2892,6 +2892,23 @@ class M(ScreenManager):
         except Exception as e:
             crashlog.write_log('Fullscreen fallo: ' + str(e)[:120])
 
+    def _force_window_resize(self, *_):
+        """Re-sincroniza el viewport OpenGL con la pantalla real tras un giro.
+        Sin esto, al volver a portrait Kivy dibuja con medidas apaisadas viejas
+        y toda la app queda cortada/desplazada."""
+        try:
+            if IS_ANDROID:
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                dm = PythonActivity.mActivity.getResources().getDisplayMetrics()
+                w, h = int(dm.widthPixels or 0), int(dm.heightPixels or 0)
+                if w > 0 and h > 0:
+                    Window.size = (w, h)
+            Window.update_viewport()
+            Window.dispatch('on_resize', *Window.size)
+        except Exception as e:
+            crashlog.write_log('Error force_window_resize: ' + str(e)[:100])
+
     def _jni_rotation(self, landscape=False):
         """Mantiene la app vertical y solo usa horizontal en fullscreen."""
         try:
@@ -3089,6 +3106,9 @@ class M(ScreenManager):
                 except Exception: pass
                 self._stop_tilt_autorotate(state)
                 self._player_dialog=None
+                # v2.0.52: re-sincronizar viewport al cerrar (vuelve a portrait).
+                Clock.schedule_once(self._force_window_resize, 0.1)
+                Clock.schedule_once(self._force_window_resize, 0.4)
             d=PlayerOverlay(root,sync_player_layout,on_close_player)
             self._last_dialog=d; self._player_dialog=d
             d.open()
@@ -3178,6 +3198,9 @@ class M(ScreenManager):
                 # queden en una coordenada vieja durante el giro.
                 Clock.schedule_once(sync_player_layout, 0.10)
                 Clock.schedule_once(sync_player_layout, 0.40)
+                # v2.0.52: re-sincronizar viewport tras el giro.
+                Clock.schedule_once(self._force_window_resize, 0.15)
+                Clock.schedule_once(self._force_window_resize, 0.45)
             fsb.bind(on_release=toggle_fs)
             cb.bind(on_release=lambda *_: d.dismiss())
             qb.bind(on_release=lambda *_: self.open_queue())
@@ -4223,6 +4246,9 @@ class M(ScreenManager):
                     pass
                 self._stop_tilt_autorotate(state)
                 self._player_dialog = None
+                # v2.0.52: re-sincronizar viewport al cerrar (vuelve a portrait).
+                Clock.schedule_once(self._force_window_resize, 0.1)
+                Clock.schedule_once(self._force_window_resize, 0.4)
             d = PlayerOverlay(root, _relayout, on_close_player)
             self._last_dialog = d
             self._player_dialog = d
@@ -4292,6 +4318,9 @@ class M(ScreenManager):
                 self._jni_rotation(state['fs'])
                 Clock.schedule_once(_relayout, 0.10)
                 Clock.schedule_once(_relayout, 0.40)
+                # v2.0.52: re-sincronizar viewport tras el giro.
+                Clock.schedule_once(self._force_window_resize, 0.15)
+                Clock.schedule_once(self._force_window_resize, 0.45)
             fsb.bind(on_release=_toggle_fs)
             self._start_tilt_autorotate(state, _toggle_fs)
 
@@ -5177,38 +5206,17 @@ class M(ScreenManager):
         if not IS_ANDROID:
             self._info('Instala el APK', 'Abri el archivo para instalar:\n' + apk_path)
             return
-        # v2.0.51: primero sesion directa (anda en Android nuevos); si falla,
-        # fallback al ACTION_VIEW legacy.
+        # v2.0.51: sesion directa (anda en Android nuevos).
+        # v2.0.52: sin fallback ACTION_VIEW (las URIs MediaStore dan "error de
+        # analisis" en Android nuevos: mejor mensaje manual directo).
         try:
             if self._install_via_session(apk_path):
                 return
         except Exception as e:
-            crashlog.write_log('Installer sesion fallo, uso fallback: ' + str(e)[:150])
-        uri = None
-        try:
-            res = self._publish_to_downloads(apk_path, 'jonayodownloader-update.apk')
-            if res:
-                uri = res.get('uri')
-        except Exception as e:
-            crashlog.write_log('Error publicando APK: ' + str(e)[:200])
-        if not uri:
-            self._info('Instala el APK',
-                       'No se pudo preparar la instalacion automatica.\n'
-                        'Descargalo manual desde:\nhttps://github.com/jonayooficial/jonayodownloader-apk/releases')
-            return
-        try:
-            from jnius import autoclass
-            Intent = autoclass('android.content.Intent')
-            Uri = autoclass('android.net.Uri')
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            intent = Intent(Intent.ACTION_VIEW)
-            intent.setDataAndType(Uri.parse(uri), 'application/vnd.android.package-archive')
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                            Intent.FLAG_ACTIVITY_NEW_TASK)
-            PythonActivity.mActivity.startActivity(intent)
-        except Exception as e:
-            crashlog.write_log('Error abriendo instalador: ' + str(e)[:200])
-            self._info('Instala el APK', 'Descargalo manual desde:\nhttps://github.com/jonayooficial/jonayodownloader-apk/releases')
+            crashlog.write_log('Installer sesion fallo: ' + str(e)[:150])
+        self._info('Instala el APK',
+                   'No se pudo iniciar la instalacion automatica.\n'
+                   'Instalalo tocando el archivo en Descargas/Jonayo_Downloads.')
 
     def show_video_menu(self, video):
         def copy_link():
