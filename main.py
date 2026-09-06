@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.52'
+APP_VERSION = '2.0.53'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -1133,41 +1133,54 @@ class Music(Base):
         bot_row.add_widget(self._mp_time)
         mp.add_widget(bot_row)
         self.add_widget(mp)
-        # Swipe hacia arriba en el mini player abre el reproductor completo.
-        # (El tap en el titulo ya lo abre; el swipe funciona desde cualquier
-        # punto del mini player sin romper los botones: solo registra Y.)
-        self._mp_swipe_y = None
-        self._mp_swipe_x = None
+        self._mp_visible = False
+        # Gestos del mini player (v2.0.53): tap en cualquier zona libre lo abre
+        # (antes solo el titulo, casi intocable) y swipe hacia arriba desde
+        # cualquier punto. Los botones/slider no se rompen: si un hijo capturo
+        # el toque (grab) o lo consumio (tap en boton), no abrimos nada.
+        # (El swipe anterior fallaba porque exigia soltar DENTRO del mini player
+        # de 64dp: un swipe real termina fuera y se ignoraba.)
+        self._mp_touch = None
         _orig_down = mp.on_touch_down
         _orig_up = mp.on_touch_up
         def _mp_down(touch):
             try:
                 if self._mp_visible and mp.opacity > 0 and mp.collide_point(*touch.pos):
-                    self._mp_swipe_y = touch.y
-                    self._mp_swipe_x = touch.x
+                    self._mp_touch = [touch.x, touch.y, time.time(), False]
+                else:
+                    self._mp_touch = None
+            except Exception:
+                self._mp_touch = None
+            res = _orig_down(touch)
+            try:
+                if self._mp_touch is not None:
+                    gl = getattr(touch, 'grab_list', None) or []
+                    if len(gl) > 0:
+                        self._mp_touch[3] = True
             except Exception:
                 pass
-            return _orig_down(touch)
+            return res
         def _mp_up(touch):
             try:
                 res = _orig_up(touch)
             except Exception:
                 res = False
             try:
-                sy = self._mp_swipe_y
-                sx = self._mp_swipe_x
-                if self._mp_visible and mp.opacity > 0 and sy is not None and mp.collide_point(*touch.pos):
-                    dy = touch.y - sy
-                    dx = abs(touch.x - (sx if sx is not None else touch.x))
+                t = self._mp_touch
+                self._mp_touch = None
+                if t is not None and not t[3] and self._mp_visible and mp.opacity > 0:
+                    dy = touch.y - t[1]
+                    dx = abs(touch.x - t[0])
+                    dt = time.time() - t[2]
                     if dy > dp(48) and dy > dx:
                         self.show_player()
-                        self._mp_swipe_y = None
-                        self._mp_swipe_x = None
+                        return True
+                    dist = (dy * dy + (touch.x - t[0]) ** 2) ** 0.5
+                    if dist < dp(12) and dt < 0.5 and not res:
+                        self.show_player()
                         return True
             except Exception:
                 pass
-            self._mp_swipe_y = None
-            self._mp_swipe_x = None
             return res
         mp.on_touch_down = _mp_down
         mp.on_touch_up = _mp_up
