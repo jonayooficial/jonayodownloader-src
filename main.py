@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.48'
+APP_VERSION = '2.0.49'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -5009,7 +5009,7 @@ class M(ScreenManager):
             dlg.dismiss()
         except Exception:
             pass
-        self._info('No se pudo actualizar', err + '\n\nDescargalo manual:\n' + 'https://github.com/Jonayo/jonayodownloader-apk/releases')
+        self._info('No se pudo actualizar', err + '\n\nDescargalo manual:\n' + 'https://github.com/jonayooficial/jonayodownloader-apk/releases')
     def _launch_installer(self, apk_path, dlg):
         try:
             dlg.dismiss()
@@ -5028,7 +5028,7 @@ class M(ScreenManager):
         if not uri:
             self._info('Instala el APK',
                        'No se pudo preparar la instalacion automatica.\n'
-                        'Descargalo manual desde:\nhttps://github.com/Jonayo/jonayodownloader-apk/releases')
+                        'Descargalo manual desde:\nhttps://github.com/jonayooficial/jonayodownloader-apk/releases')
             return
         try:
             from jnius import autoclass
@@ -5042,7 +5042,7 @@ class M(ScreenManager):
             PythonActivity.mActivity.startActivity(intent)
         except Exception as e:
             crashlog.write_log('Error abriendo instalador: ' + str(e)[:200])
-            self._info('Instala el APK', 'Descargalo manual desde:\nhttps://github.com/Jonayo/jonayodownloader-apk/releases')
+            self._info('Instala el APK', 'Descargalo manual desde:\nhttps://github.com/jonayooficial/jonayodownloader-apk/releases')
 
     def show_video_menu(self, video):
         def copy_link():
