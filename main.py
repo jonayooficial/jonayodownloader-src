@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.49'
+APP_VERSION = '2.0.50'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -357,6 +357,25 @@ def safe_text(value, fallback=''):
         out.append(ch)
     text = ''.join(out).strip()
     return text or fallback
+
+
+def fmt_size(num_bytes, is_approx=False):
+    """Formatea bytes a '45 MB' o '~45 MB' si es aproximado. '' si no hay dato."""
+    try:
+        num_bytes = int(num_bytes or 0)
+    except Exception:
+        return ""
+    if num_bytes <= 0:
+        return ""
+    prefix = "~" if is_approx else ""
+    if num_bytes >= 1073741824:
+        return f"{prefix}{num_bytes / 1073741824:.1f} GB"
+    elif num_bytes >= 1048576:
+        mb = num_bytes / 1048576
+        return f"{prefix}{mb:.0f} MB" if mb >= 10 else f"{prefix}{mb:.1f} MB"
+    elif num_bytes >= 1024:
+        return f"{prefix}{num_bytes / 1024:.0f} KB"
+    return f"{prefix}{num_bytes} B"
 
 
 class ClickableBox(ButtonBehavior, BoxLayout):
@@ -836,17 +855,23 @@ class Options(Base):
             row = RadioRow(x, desc, x == sel)
             row.bind(on_release=lambda _, q2=x: self.set_quality(q2))
             q.add_widget(row); self.quality_btns[x] = row
-    def set_heights(self, heights):
-        """Recibe alturas reales del video ([2160,1440,...]) y muestra solo esas."""
+    def set_heights(self, heights, sizes=None):
+        """Recibe alturas reales ([2160,1440,...]) y tamanos dict {height: '45 MB'}."""
         try:
             hs = sorted({int(h) for h in (heights or [])}, reverse=True)[:7]
         except Exception:
             hs = []
         if not hs:
             return
+        sizes = sizes or {}
         names = {4320: '8K Ultra HD', 2160: '4K Ultra HD', 1440: '2K QHD', 1080: 'Full HD', 720: 'HD',
                  480: 'SD', 360: 'SD', 240: 'Baja'}
-        pairs = [(f'{h}p', names.get(h, '')) for h in hs]
+        pairs = []
+        for h in hs:
+            name = names.get(h, '')
+            sz = sizes.get(h, '') or sizes.get(str(h), '')
+            desc = f"{name}  ·  {sz}" if (name and sz) else (sz or name)
+            pairs.append((f'{h}p', desc))
         self._build_quality_rows(pairs)
     def set_video(self,video):
         self.video=video; self.info_card.clear_widgets(); self._info_thumb=Thumb(video.get('title',''),video.get('duration',''),video.get('color',0),video.get('thumb',''),width=126,height=78); self.info_card.add_widget(self._info_thumb); col=BoxLayout(orientation='vertical'); col.add_widget(Label(text=safe_text(video.get('title','Sin título'), 'Sin título'),color=WHITE,font_size=sp(11.5),bold=True,halign='left',valign='middle')); col.add_widget(Label(text=video.get('channel',''),color=MUTED,font_size=sp(9.5),halign='left')); col.add_widget(Label(text=video.get('duration',''),color=DIM,font_size=sp(9),halign='left')); self.info_card.add_widget(col)
@@ -2765,20 +2790,31 @@ class M(ScreenManager):
     def _stream_switch(self, v, item, quality, busy_label=None):
         url=(item or {}).get('url') or ''
         if not url: return
-        if busy_label: busy_label.text='Cambiando calidad...'
+        old_q = (item or {}).get('stream_quality', 'HD')
+        if busy_label: busy_label.text='Cambiando...'
         def worker():
             try:
                 stream=self._resolve_stream(url,quality)
                 Clock.schedule_once(lambda dt: self._apply_stream(v,item,stream,busy_label))
             except Exception as e:
                 err=str(e)[:160]
-                Clock.schedule_once(lambda dt: self._info('Calidad', 'No se pudo cambiar la calidad.\n'+err))
+                def _restore_ui(dt):
+                    if busy_label: busy_label.text=old_q
+                    self._info('Calidad', 'No se pudo cambiar la calidad.\n'+err)
+                Clock.schedule_once(_restore_ui)
         threading.Thread(target=worker,daemon=True).start()
 
     def _apply_stream(self, v, item, stream, busy_label=None):
         try:
             pos=v.position or 0
             was_playing = v.state == 'play'
+            # v2.0.50: guardar el stream previo que andaba + reiniciar el
+            # temporizador anti-negro (el timeout es por stream, no por apertura).
+            old_url = (item or {}).get('stream_url')
+            old_q = (item or {}).get('stream_quality')
+            if old_url and old_url != stream['url']:
+                v._prev_stream = {'url': old_url, 'quality': old_q}
+            v._t0 = time.time()
             # No limpiar source/texture para evitar flash blanco; solo cambiar url
             v.source=stream['url']
             if was_playing:
@@ -3059,6 +3095,8 @@ class M(ScreenManager):
             # Al abrir el reproductor NO se gira el telefono.
             crashlog.write_log('Reproductor interno abierto: '+safe_text((item or {}).get('title'),os.path.basename(source)))
             t0=[time.time()]
+            v._t0 = t0[0]
+            v._prev_stream = None
             hide_ev=[None]
             last_touch=[time.time()]
 
@@ -3160,7 +3198,24 @@ class M(ScreenManager):
                     qlabel.text=safe_text(item.get('stream_quality','HD') if item else 'HD','HD')
                     if state['mode']=='video' and v.state=='play' and not state['hidden'] and (time.time()-last_touch[0])>3:
                         hide_controls()
-                    if state['mode']=='video' and v.state=='play' and (time.time()-t0[0])>8 and v.texture is None:
+                    if v.texture is not None and getattr(v, '_prev_stream', None):
+                        v._prev_stream = None
+                    v_t0 = getattr(v, '_t0', 0) or t0[0]
+                    if state['mode']=='video' and v.state=='play' and (time.time()-v_t0)>8 and v.texture is None:
+                        # v2.0.50: timeout por stream. Si veniamos de un cambio de
+                        # calidad, revertir a la anterior que andaba (no fallback).
+                        prev = getattr(v, '_prev_stream', None)
+                        if prev:
+                            new_q = (item or {}).get('stream_quality', '')
+                            v._prev_stream = None
+                            v._t0 = time.time()
+                            v.source = prev['url']
+                            v.state = 'play'
+                            item['stream_url'] = prev['url']
+                            item['stream_quality'] = prev['quality']
+                            qlabel.text = safe_text(prev['quality'], 'HD')
+                            self._info('Calidad', f"No se pudo cargar {new_q}.\nManteniendo {prev['quality']}.")
+                            return
                         # v2.0.48: el stream nunca cargo (403/expirado/CDN caido).
                         # No dejar el player negro congelado: ir al fallback.
                         d.dismiss()
@@ -3277,14 +3332,23 @@ class M(ScreenManager):
                             _j = _r.json()
                             if _j.get('title'):
                                 _hs = set()
+                                _piped_sizes = {}
+                                _dur = _j.get('duration') or 0
                                 for _vf in (_j.get('videoStreams') or []):
                                     try:
                                         _hh = int(_vf.get('height') or 0)
                                         if _hh >= 144 and _vf.get('url'):
                                             _hs.add(_hh)
+                                            # v2.0.50: tamano para mostrar en opciones.
+                                            _sz = _vf.get('filesize') or 0
+                                            if not _sz and _dur and _vf.get('bitrate'):
+                                                try: _sz = int(_dur * int(_vf.get('bitrate')) / 8)
+                                                except Exception: _sz = 0
+                                            if _sz and _sz > 0:
+                                                _piped_sizes[_hh] = fmt_size(_sz, True)
                                     except Exception:
                                         pass
-                                info = {'id': _vid, 'title': _j.get('title', 'Video'), 'duration': _j.get('duration') or 0, 'uploader': _j.get('uploader') or '', 'webpage_url': url, 'thumbnail': _j.get('thumbnailUrl') or '', '_piped': True, '_piped_heights': sorted(_hs, reverse=True)}
+                                info = {'id': _vid, 'title': _j.get('title', 'Video'), 'duration': _dur, 'uploader': _j.get('uploader') or '', 'webpage_url': url, 'thumbnail': _j.get('thumbnailUrl') or '', '_piped': True, '_piped_heights': sorted(_hs, reverse=True), '_piped_sizes': _piped_sizes}
                                 break
                         except Exception:
                             continue
@@ -3307,16 +3371,59 @@ class M(ScreenManager):
             video['url'] = info.get('webpage_url') or url
             try:
                 hs = set(info.get('_piped_heights') or [])
-                for f in (info.get('formats') or []):
-                    h = f.get('height')
-                    vc = str(f.get('vcodec') or 'none')
-                    if h and vc != 'none':
-                        h = int(h)
-                        if h >= 144:
-                            hs.add(h)
+                # v2.0.50: tamanos por altura para mostrar en opciones de descarga.
+                sizes = dict(info.get('_piped_sizes') or {})
+                duration = info.get('duration') or 0
+                formats = info.get('formats') or []
+                if formats:
+                    best_a_size, best_a_approx = 0, False
+                    for f in formats:
+                        if str(f.get('vcodec') or 'none') == 'none' and str(f.get('acodec') or 'none') != 'none':
+                            sz = f.get('filesize')
+                            appr = False
+                            if not sz:
+                                sz = f.get('filesize_approx')
+                                appr = True
+                            if not sz and duration and f.get('abr'):
+                                try: sz = int(duration * float(f.get('abr')) * 1000 / 8)
+                                except Exception: sz = 0
+                                appr = True
+                            if sz and sz > best_a_size:
+                                best_a_size, best_a_approx = sz, appr
+                    v_by_h = {}
+                    for f in formats:
+                        h = f.get('height')
+                        vc = str(f.get('vcodec') or 'none')
+                        if h and vc != 'none':
+                            try:
+                                h = int(h)
+                                if h < 144:
+                                    continue
+                                hs.add(h)
+                                sz = f.get('filesize')
+                                appr = False
+                                if not sz:
+                                    sz = f.get('filesize_approx')
+                                    appr = True
+                                if not sz and duration and (f.get('vbr') or f.get('tbr')):
+                                    try: sz = int(duration * float(f.get('vbr') or f.get('tbr')) * 1000 / 8)
+                                    except Exception: sz = 0
+                                    appr = True
+                                has_audio = (str(f.get('acodec') or 'none') != 'none')
+                                total = sz if (has_audio or not sz) else (sz + best_a_size)
+                                is_appr = appr or (not has_audio and best_a_approx)
+                                if total and (h not in v_by_h or total > v_by_h[h]['size']):
+                                    v_by_h[h] = {'size': total, 'approx': is_appr}
+                            except Exception:
+                                pass
+                    for h, data in v_by_h.items():
+                        if data['size'] and data['size'] > 0:
+                            sizes[h] = fmt_size(data['size'], data['approx'])
                 video['_heights'] = sorted(hs, reverse=True)
+                video['_sizes'] = sizes
             except Exception:
                 video['_heights'] = []
+                video['_sizes'] = {}
             Clock.schedule_once(lambda dt, v=video: self._analysis_done(v))
         except Exception as e:
             err = str(e)[:180]
@@ -3393,8 +3500,9 @@ class M(ScreenManager):
         opts.set_video(video)
         opts.set_mode('video')
         heights = video.pop('_heights', None)
+        sizes = video.pop('_sizes', None)
         if heights:
-            opts.set_heights(heights)
+            opts.set_heights(heights, sizes)
             best = f'{heights[0]}p' if heights else '4320p'
             opts.set_quality(best)
         else:
