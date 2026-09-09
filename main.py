@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.57'
+APP_VERSION = '2.0.58'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -3725,6 +3725,7 @@ class M(ScreenManager):
         import yt_dlp
         _patch_ytdlp_write_string()
         crashlog.write_log(f"Descarga iniciada modo={self.current_mode} res={self.current_quality}")
+        self._dl_real_h = None
         try:
             self._dir_before = set(os.listdir(self.download_path))
         except Exception:
@@ -3745,7 +3746,7 @@ class M(ScreenManager):
             'windowsfilenames': True,
             'logger': _YDL_Logger(),
             'noprogress': True,
-            # v2.0.47: android primero (unicos que responden hoy); resto de respaldo.
+            # v2.0.58: valor inicial (el loop lo reemplaza por cliente).
             # NO usar bulk ['visionos','tv','web_embedded']: mezcla clientes
             # con token (mweb/web) y dispara SABR/rate-limit.
             'extractor_args': {'youtube': {'player_client': ['android']}},
@@ -3766,10 +3767,19 @@ class M(ScreenManager):
 
         try:
             _dl_err = None
-            # v2.0.47: android primero (unicos que responden hoy); resto de respaldo.
-            for _cl in [['android'], ['android_vr'], ['visionos'], ['tv'], ['web_embedded'], ['web_safari']]:
+            # v2.0.58: HD primero con fail-rapido (sin reintentos: si YouTube
+            # bloquea, falla en segundos), android confiable al final (con
+            # reintentos). Asi la calidad pedida se respeta cuando se puede.
+            _HD_FAST = ('visionos', 'tv', 'web_embedded')
+            for _cl in [['visionos'], ['tv'], ['web_embedded'], ['android'], ['android_vr'], ['web_safari']]:
                 try:
                     ydl_opts['extractor_args'] = {'youtube': {'player_client': _cl}}
+                    if _cl[0] in _HD_FAST:
+                        ydl_opts['retries'] = 0
+                        ydl_opts['fragment_retries'] = 0
+                    else:
+                        ydl_opts['retries'] = 5
+                        ydl_opts['fragment_retries'] = 5
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         self.current_ydl = ydl
                         ydl.download([url])
@@ -3887,6 +3897,16 @@ class M(ScreenManager):
         if self.paused:
             raise Exception('Pausado por el usuario')
         if d['status'] == 'downloading':
+            # v2.0.58: altura REAL descargada (para etiqueta honesta en _finish).
+            try:
+                _info = d.get('info_dict') or {}
+                _req = _info.get('requested_formats') or [_info]
+                _hs = [int(f.get('height') or 0) for f in _req
+                       if f and f.get('height') and int(f.get('height') or 0) >= 144]
+                if _hs:
+                    self._dl_real_h = max(_hs)
+            except Exception:
+                pass
             total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
             down = d.get('downloaded_bytes', 0)
             percent = (down / total * 100) if total else 0
@@ -3909,7 +3929,19 @@ class M(ScreenManager):
         entry = None
         if self.selected:
             entry = dict(self.selected)
-            entry['quality'] = self.current_quality
+            # v2.0.58: etiqueta honesta (la pedida vs la real si difieren).
+            _rh = getattr(self, '_dl_real_h', None)
+            if self.current_mode == 'video' and _rh:
+                try:
+                    _rh = int(_rh)
+                except Exception:
+                    _rh = 0
+                if _rh and f'{_rh}p' != self.current_quality:
+                    entry['quality'] = f"{_rh}p (pedida {self.current_quality})"
+                else:
+                    entry['quality'] = self.current_quality
+            else:
+                entry['quality'] = self.current_quality
             entry['format'] = 'MP3' if self.current_mode == 'audio' else 'MP4'
             entry['status'] = 'completado'
             if public:
