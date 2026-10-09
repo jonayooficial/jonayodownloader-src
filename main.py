@@ -5,7 +5,7 @@ if not os.environ.get("ANDROID_ARGUMENT"):
 
 import crashlog
 crashlog.install_crash_handler()
-crashlog.write_log("=== Inicio main.py (fusionado) v2.0.64 ===")
+crashlog.write_log("=== Inicio main.py (fusionado) v2.0.65 ===")
 
 import sys
 import io
@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.64'
+APP_VERSION = '2.0.65'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -2252,7 +2252,47 @@ class M(ScreenManager):
             Clock.schedule_once(lambda dt, m=err: self.get_screen('search').show_error(m))
 
     # ─── TENDENCIAS REAL ───────────────────────────────────────
+    def _trend_cache_file(self):
+        try:
+            return os.path.join(self._data_dir(), 'trending_cache.json')
+        except Exception:
+            return ''
+
+    def _trend_cache_load(self, max_age=12 * 3600):
+        """Tendencias guardadas (max_age seg). Lista o []."""
+        try:
+            import json as _j
+            import time as _t
+            p = self._trend_cache_file()
+            if not p or not os.path.isfile(p):
+                return []
+            if _t.time() - os.path.getmtime(p) > max_age:
+                return []
+            with open(p, 'r', encoding='utf-8') as f:
+                items = _j.load(f) or []
+            return items if isinstance(items, list) else []
+        except Exception:
+            return []
+
+    def _trend_cache_save(self, items):
+        try:
+            import json as _j
+            p = self._trend_cache_file()
+            if not p:
+                return
+            with open(p, 'w', encoding='utf-8') as f:
+                _j.dump((items or [])[:10], f, ensure_ascii=False)
+        except Exception:
+            pass
+
     def _load_trending(self):
+        # v2.0.65: pintar cache al instante (0 seg) y refrescar en fondo.
+        try:
+            cached = self._trend_cache_load()
+            if cached and 'home' in (self.screen_names or []):
+                Clock.schedule_once(lambda dt, it=cached: self.get_screen('home').show_trending(it))
+        except Exception:
+            pass
         threading.Thread(target=self._trending_thread, daemon=True).start()
 
     def _check_clipboard(self):
@@ -2283,9 +2323,13 @@ class M(ScreenManager):
     def _trending_thread(self):
         import yt_dlp
         try:
+            # v2.0.65: extract_flat (5x mas rapido: 1.5s vs 7s por tanda; en el
+            # telefono la diferencia es de minutos). Los listados no necesitan
+            # formatos; eso se resuelve al reproducir/descargar.
             ydl_opts = {'quiet': True, 'no_warnings': True, 'noplaylist': True,
+                        'extract_flat': True, 'playlistend': 10,
                         'check_formats': False, 'nocheckcertificate': True,
-                        'socket_timeout': 15,
+                        'socket_timeout': 10,
                         # v2.0.47: cliente default (web) bloqueado; android primero.
                         'extractor_args': {'youtube': {'player_client': ['android', 'android_vr', 'visionos', 'tv', 'web_embedded']}}}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -2296,10 +2340,55 @@ class M(ScreenManager):
                 if not e or not e.get('id'):
                     continue
                 items.append(self._to_video(e, idx))
-            Clock.schedule_once(lambda dt, it=items: self.get_screen('home').show_trending(it))
+            if items:
+                self._trend_cache_save(items)
+                Clock.schedule_once(lambda dt, it=items: self.get_screen('home').show_trending(it))
+                return
+            raise RuntimeError('Sin resultados de tendencias.')
         except Exception as e:
             err = str(e)[:150]
             crashlog.write_log("Error trending: " + err)
+            # v2.0.65: respaldo Piped (/trending) antes de mostrar error.
+            try:
+                import requests, certifi
+                _items = []
+                for _h in ['https://api.piped.private.coffee', 'https://pipedapi.kavin.rocks', 'https://pipedapi-libre.kavin.rocks']:
+                    try:
+                        _r = requests.get(f'{_h}/trending?region=AR', timeout=12,
+                                          verify=certifi.where(),
+                                          headers={'User-Agent': 'Mozilla/5.0'})
+                        _r.raise_for_status()
+                        for _idx, _en in enumerate((_r.json() or [])[:8]):
+                            _u = str(_en.get('url') or '')
+                            _vid = _u.split('v=')[-1].split('&')[0] if 'v=' in _u else _u.rstrip('/').split('/')[-1]
+                            if not _vid or len(_vid) != 11:
+                                continue
+                            _dur = _en.get('duration') or 0
+                            try:
+                                _dur = int(_dur)
+                            except Exception:
+                                _dur = 0
+                            _items.append({
+                                'id': _vid,
+                                'title': _en.get('title', 'Sin titulo'),
+                                'url': f'https://www.youtube.com/watch?v={_vid}',
+                                'thumb': self._thumb_path(self._fast_thumb(_en.get('thumbnail') or '') or self._thumb_url_from_id(_vid)),
+                                'duration': f"{_dur // 60}:{_dur % 60:02d}" if _dur > 0 else '',
+                                'channel': _en.get('uploaderName', ''),
+                                'views': '',
+                                'age': '',
+                                'color': _idx % 5,
+                            })
+                        if _items:
+                            break
+                    except Exception:
+                        continue
+                if _items:
+                    self._trend_cache_save(_items)
+                    Clock.schedule_once(lambda dt, it=_items: self.get_screen('home').show_trending(it))
+                    return
+            except Exception:
+                pass
             Clock.schedule_once(lambda dt, m=err: self.get_screen('home').show_trending_error(m))
 
     def _fast_thumb(self, url):
