@@ -5,7 +5,7 @@ if not os.environ.get("ANDROID_ARGUMENT"):
 
 import crashlog
 crashlog.install_crash_handler()
-crashlog.write_log("=== Inicio main.py (fusionado) v1.8.9 ===")
+crashlog.write_log("=== Inicio main.py (fusionado) v2.0.59 ===")
 
 import sys
 import io
@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.58'
+APP_VERSION = '2.0.59'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -1937,6 +1937,28 @@ def _patch_ytdlp_write_string():
         pass
 
 
+def friendly_error(msg):
+    """Traduce errores tecnicos de yt-dlp/red a texto claro en español.
+    Solo se usa para MOSTRAR (logs guardan el original)."""
+    low = (msg or "").lower()
+    if "not a bot" in low or "sign in to confirm" in low or "login_required" in low:
+        return ("YouTube pidio verificacion anti-bots. Proba con otro video "
+                "o mas tarde, y evita usar VPN.")
+    if "private video" in low or "video is private" in low:
+        return "Ese video es privado."
+    if "unavailable" in low:
+        return "Video no disponible (eliminado, privado o bloqueado por region)."
+    if "timed out" in low or "timeout" in low:
+        return "Tiempo de espera agotado. Revisa tu conexion e intenta de nuevo."
+    if "unable to download" in low and "403" in low:
+        return "YouTube rechazo la descarga (403). Proba otra calidad o mas tarde."
+    if "unsupported url" in low:
+        return "Esa URL no es un video de YouTube valido."
+    if "incompleta" in low:
+        return msg[:220]
+    return (msg or "Error desconocido.")[:220]
+
+
 class M(ScreenManager):
     def __init__(self, **kw):
         super().__init__(**kw)
@@ -3611,7 +3633,12 @@ class M(ScreenManager):
             return
         opts = self.get_screen('options')
         self.current_mode = opts.mode
-        self.current_quality = opts.quality
+        if opts.mode == 'audio':
+            # v2.0.59: MP3 siempre en maxima calidad (320 kbps). No se usa
+            # opts.quality (trae '1080p' etc. y rompería el postprocesador).
+            self.current_quality = '320'
+        else:
+            self.current_quality = opts.quality
         self.cancel_event.clear()
         self.paused = False
         self.downloading = True
@@ -3698,7 +3725,7 @@ class M(ScreenManager):
             return
         self.selected = dict(item)
         self.current_mode = 'audio'
-        self.current_quality = '192'
+        self.current_quality = '320'
         self.cancel_event.clear()
         self.paused = False
         self.downloading = True
@@ -3710,7 +3737,7 @@ class M(ScreenManager):
         q = self.current_quality
         if self.current_mode == 'video':
             return f'{q} · MP4'
-        return 'MP3 · Audio'
+        return f'MP3 · {q} kbps'
 
     def begin_download(self):
         # Compatibilidad con versiones anteriores.
@@ -3733,19 +3760,23 @@ class M(ScreenManager):
         ffmpeg_bin = self._ensure_ffmpeg()
         crashlog.write_log('ffmpeg_bin para yt-dlp: ' + repr(ffmpeg_bin))
         ydl_opts = {
-            'outtmpl': os.path.join(self.download_path, '%(title)s.%(ext)s'),
+            'outtmpl': os.path.join(self.download_path, '%(title).100B [%(id)s].%(ext)s'),
             'progress_hooks': [self._hook],
             'nocheckcertificate': True,
             'quiet': True,
             'no_warnings': True,
+            'geo_bypass': True,
             'socket_timeout': 20,
             'continuedl': True,
             'retries': 5,
             'fragment_retries': 5,
+            'extractor_retries': 3,
             'concurrent_fragment_downloads': 2,
             'windowsfilenames': True,
+            'trim_file_name': 100,
             'logger': _YDL_Logger(),
             'noprogress': True,
+            'http_headers': {'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'},
             # v2.0.58: valor inicial (el loop lo reemplaza por cliente).
             # NO usar bulk ['visionos','tv','web_embedded']: mezcla clientes
             # con token (mweb/web) y dispara SABR/rate-limit.
@@ -3759,10 +3790,13 @@ class M(ScreenManager):
             ydl_opts['merge_output_format'] = 'mp4'
         else:
             ydl_opts['format'] = 'bestaudio/best'
+            # v2.0.59: maxima calidad MP3 (320). current_quality en modo audio
+            # siempre es digito ('320'); si no, respaldo a '320'.
+            _aq = str(self.current_quality) if str(self.current_quality).isdigit() else '320'
             ydl_opts['postprocessors'] = [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
-                'preferredquality': '192',
+                'preferredquality': _aq,
             }]
 
         try:
@@ -3827,7 +3861,7 @@ class M(ScreenManager):
     def _download_error(self, msg):
         self.downloading = False
         self.paused = False
-        self._info('Error en descarga', msg)
+        self._info('Error en descarga', friendly_error(msg))
         self.go('downloads')
 
     def _set_paused_ui(self):
@@ -3909,8 +3943,14 @@ class M(ScreenManager):
                 pass
             total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
             down = d.get('downloaded_bytes', 0)
+            frag = ''
+            try:
+                if d.get('fragment_index') and d.get('fragment_count'):
+                    frag = f" · frag {d['fragment_index']}/{d['fragment_count']}"
+            except Exception:
+                frag = ''
             percent = (down / total * 100) if total else 0
-            speed = (d.get('_speed_str') or '---').strip()
+            speed = ((d.get('_speed_str') or '---').strip() + frag)
             Clock.schedule_once(lambda dt, p=percent, db=down, tt=total, sp=speed:
                                 self._update_progress(p, db, tt, sp))
 
@@ -3918,14 +3958,43 @@ class M(ScreenManager):
         if not self.downloading:
             return
         mb = down / 1_048_576
-        mb_t = total / 1_048_576
-        self.get_screen('downloading').update_progress(percent, f'{mb:.1f}', f'{mb_t:.1f}', speed)
+        if total and total > 0:
+            mb_t = total / 1_048_576
+            self.get_screen('downloading').update_progress(percent, f'{mb:.1f}', f'{mb_t:.1f}', speed)
+        else:
+            # Total desconocido (DASH/HLS): mostrar lo bajado sin mentir con 0.0.
+            self.get_screen('downloading').update_progress(percent, f'{mb:.1f}', '?', speed)
 
     def _finish(self):
         self.downloading = False
         self.paused = False
         public = getattr(self, '_published', []) or []
         self._published = []
+        if not public:
+            # v2.0.59: respaldo tras pausa/reanudar (_dir_before ya contenia el
+            # parcial y "now - before" queda vacio): tomar el final mas nuevo.
+            try:
+                import time as _t
+                _cands = []
+                for _name in os.listdir(self.download_path):
+                    _low = _name.lower()
+                    if not _low.endswith(('.mp4', '.mp3', '.m4a', '.webm', '.mkv',
+                                          '.opus', '.flac', '.wav')):
+                        continue
+                    _p = os.path.join(self.download_path, _name)
+                    try:
+                        if os.path.isfile(_p):
+                            _cands.append((os.path.getmtime(_p), _p, _name))
+                    except Exception:
+                        continue
+                if _cands:
+                    _cands.sort()
+                    _mtime, _p, _n = _cands[-1]
+                    if _t.time() - _mtime < 3600:
+                        public = [{'uri': 'file://' + _p, 'path': _p,
+                                   'local_path': _p}]
+            except Exception as _e:
+                crashlog.write_log('Fallback archivo final: ' + str(_e)[:120])
         entry = None
         if self.selected:
             entry = dict(self.selected)
