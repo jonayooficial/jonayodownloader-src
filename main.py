@@ -5,7 +5,7 @@ if not os.environ.get("ANDROID_ARGUMENT"):
 
 import crashlog
 crashlog.install_crash_handler()
-crashlog.write_log("=== Inicio main.py (fusionado) v2.0.60 ===")
+crashlog.write_log("=== Inicio main.py (fusionado) v2.0.61 ===")
 
 import sys
 import io
@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.60'
+APP_VERSION = '2.0.61'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -5314,7 +5314,7 @@ class M(ScreenManager):
             dlg.dismiss()
         except Exception:
             pass
-        self._info('No se pudo actualizar', err + '\n\nTip: tocá el APK en Descargas/Jonayo_Downloads para instalarlo manual.\n\nO bajalo de:\n' + 'https://github.com/jonayooficial/jonayodownloader-apk/releases')
+        self._info('No se pudo actualizar', err + '\n\nTip: tocá el APK en Descargas/Jonayo_Downloads para instalarlo manual.\n\nO bajalo de:\n' + 'https://github.com/Jonayo/jonayodownloader-apk/releases')
     def _install_via_session(self, apk_path):
         """Instalacion moderna via PackageInstaller.Session (Android 5+).
         Transmite el APK directo, sin FileProvider ni MediaStore: es el metodo
@@ -5425,7 +5425,7 @@ class M(ScreenManager):
             else:
                 self._info('Instala el APK',
                            f'No se pudo iniciar la instalacion automatica ({err}).\n'
-                           'Bajalo desde:\nhttps://github.com/jonayooficial/jonayodownloader-apk/releases')
+                            'Bajalo desde:\nhttps://github.com/Jonayo/jonayodownloader-apk/releases')
             return
         self._info('Instala el APK',
                    'No se pudo iniciar la instalacion automatica.\n'

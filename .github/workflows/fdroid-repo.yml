@@ -1,10 +1,9 @@
 name: F-Droid repo
 
 on:
-  workflow_run:
-    workflows: ['Build APK']
-    types: [completed]
-    branches: [main]
+  # v2.0.61: auto-post DESACTIVADO (la APK ya no se distribuye por
+  # jonayooficial; el canal unico es Jonayo/jonayodownloader-apk + web).
+  # Solo manual via workflow_dispatch si alguna vez se necesita.
   workflow_dispatch:
 
 permissions:
