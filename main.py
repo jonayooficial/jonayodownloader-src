@@ -5,7 +5,7 @@ if not os.environ.get("ANDROID_ARGUMENT"):
 
 import crashlog
 crashlog.install_crash_handler()
-crashlog.write_log("=== Inicio main.py (fusionado) v2.0.61 ===")
+crashlog.write_log("=== Inicio main.py (fusionado) v2.0.62 ===")
 
 import sys
 import io
@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.61'
+APP_VERSION = '2.0.62'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -4562,14 +4562,11 @@ class M(ScreenManager):
         return quedo
 
     def music_queue_add(self, item, row=None):
-        """Agrega una cancion a la cola y la reproduce."""
+        """Agrega una cancion a la cola y la reproduce enseguida (el boton es
+        reproducir: si ya sonaba otra, se interrumpe y suena la elegida)."""
         self._music_queue.append(dict(item))
         idx = len(self._music_queue) - 1
-        if self._music_sound is None or not self._music_playing:
-            self._music_play_idx(idx)
-        else:
-            screen = self.get_screen('music')
-            screen.show_mini_player(item.get('title', ''), playing=True)
+        self._music_play_idx(idx)
 
     def _music_resolve_url(self, item, on_done):
         """Resuelve la URL de streaming de un item yt-dlp (en background)."""
