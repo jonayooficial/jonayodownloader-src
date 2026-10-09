@@ -1,9 +1,11 @@
 import os
 import threading
 
-VERSION = "2.0.59"
-API_URL = "https://api.github.com/repos/jonayooficial/jonayodownloader-apk/releases/latest"
-DL_URL = "https://github.com/jonayooficial/jonayodownloader-apk/releases/latest"
+VERSION = "2.0.60"
+# v2.0.60: canal unico de distribucion = cuenta Jonayo (ahi estan la web y
+# las releases). NO publicar en jonayooficial/apk (queda vacio/retirado).
+API_URL = "https://api.github.com/repos/Jonayo/jonayodownloader-apk/releases/latest"
+DL_URL = "https://github.com/Jonayo/jonayodownloader-apk/releases/latest"
 _last_error = ""
 
 

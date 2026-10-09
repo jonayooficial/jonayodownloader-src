@@ -5,7 +5,7 @@ if not os.environ.get("ANDROID_ARGUMENT"):
 
 import crashlog
 crashlog.install_crash_handler()
-crashlog.write_log("=== Inicio main.py (fusionado) v2.0.59 ===")
+crashlog.write_log("=== Inicio main.py (fusionado) v2.0.60 ===")
 
 import sys
 import io
@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.59'
+APP_VERSION = '2.0.60'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
