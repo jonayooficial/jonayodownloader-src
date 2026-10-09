@@ -5,7 +5,7 @@ if not os.environ.get("ANDROID_ARGUMENT"):
 
 import crashlog
 crashlog.install_crash_handler()
-crashlog.write_log("=== Inicio main.py (fusionado) v2.0.62 ===")
+crashlog.write_log("=== Inicio main.py (fusionado) v2.0.63 ===")
 
 import sys
 import io
@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.62'
+APP_VERSION = '2.0.63'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -1935,6 +1935,9 @@ def _patch_ytdlp_write_string():
         _u._jonayo_patched = True
     except Exception:
         pass
+
+
+INSTALL_RESULT_ACTION = 'org.jonayo.jonayodownloader2.INSTALL_RESULT'
 
 
 def friendly_error(msg):
@@ -5350,7 +5353,7 @@ class M(ScreenManager):
         PendingIntent = autoclass('android.app.PendingIntent')
         Build = autoclass('android.os.Build$VERSION')
         launch = Intent(activity.getApplicationContext(), PythonActivity)
-        launch.setAction('org.jonayo.jonayodownloader2.INSTALL_RESULT')
+        launch.setAction(INSTALL_RESULT_ACTION)
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         flags = PendingIntent.FLAG_UPDATE_CURRENT
         if Build.SDK_INT >= 31:
@@ -5427,6 +5430,65 @@ class M(ScreenManager):
         self._info('Instala el APK',
                    'No se pudo iniciar la instalacion automatica.\n'
                    'Instalalo tocando el archivo en Descargas/Jonayo_Downloads.')
+
+    def _install_legacy_message(self, legacy):
+        """Traduce el codigo legacy del PackageInstaller a texto accionable."""
+        try:
+            code = int(legacy)
+        except Exception:
+            return f'codigo {legacy}'
+        table = {
+            -1: 'la app ya existe con otro instalador',
+            -2: 'APK invalido o corrupto (descargalo de nuevo)',
+            -4: 'sin espacio suficiente: libera almacenamiento',
+            -7: 'firma distinta a la instalada (desinstala la vieja e instala)',
+            -14: 'tu Android es muy viejo para esta version',
+            -15: 'APK de prueba: descarga el release',
+            -16: 'CPU incompatible con tu telefono',
+            -25: 'la instalada es mas nueva (downgrade bloqueado)',
+        }
+        return table.get(code, f'codigo {code}')
+
+    def _handle_install_intent(self, intent=None):
+        """Lee el resultado del PackageInstaller (nuestro INSTALL_RESULT).
+        Hasta ahora se ignoraba: si el sistema rechazaba la instalacion nadie
+        mostraba el motivo real. Devuelve True si era nuestro intent."""
+        try:
+            if intent is None:
+                return False
+            try:
+                action = intent.getAction()
+            except Exception:
+                return False
+            if action != INSTALL_RESULT_ACTION:
+                return False
+            try:
+                status = int(intent.getIntExtra('android.content.pm.extra.STATUS', -999))
+            except Exception:
+                status = -999
+            try:
+                legacy = int(intent.getIntExtra('android.content.pm.extra.LEGACY_STATUS', 0))
+            except Exception:
+                legacy = 0
+            try:
+                pkg = str(intent.getStringExtra('android.content.pm.extra.PACKAGE_NAME') or '')
+            except Exception:
+                pkg = ''
+            crashlog.write_log(f'Install result: status={status} legacy={legacy} pkg={pkg}')
+            if status == 1:  # STATUS_SUCCESS
+                self._last_install_ok = True
+                self._info('Actualizacion instalada',
+                           'Reinicia la app para usar la nueva version.')
+            elif status == 0:  # STATUS_PENDING_USER_ACTION: el sistema muestra su UI
+                pass
+            else:
+                msg = self._install_legacy_message(legacy)
+                self._info('No se pudo instalar',
+                           f'Motivo: {msg}.\n\nTip: toca el APK en Descargas/Jonayo_Downloads para instalarlo manual.')
+            return True
+        except Exception as e:
+            crashlog.write_log('Error leyendo resultado instalacion: ' + str(e)[:120])
+            return False
 
     def show_video_menu(self, video):
         def copy_link():
@@ -5523,6 +5585,29 @@ class AppMain(App):
                 pass
             raise
         self.manager = m
+        # v2.0.63: escuchar el resultado del instalador (INSTALL_RESULT).
+        # Si el sistema rechaza la sesion, aca llega el motivo real.
+        try:
+            if IS_ANDROID:
+                from android import activity as _act
+
+                def _on_new_intent(*args):
+                    try:
+                        m._handle_install_intent(args[0] if args else None)
+                    except Exception:
+                        pass
+                _act.bind(on_new_intent=_on_new_intent)
+
+                def _check_launch_intent(*_):
+                    try:
+                        from jnius import autoclass as _ac
+                        _pm = _ac('org.kivy.android.PythonActivity').mActivity
+                        m._handle_install_intent(_pm.getIntent())
+                    except Exception:
+                        pass
+                Clock.schedule_once(_check_launch_intent, 1.5)
+        except Exception as e:
+            crashlog.write_log('No se pudo enlazar install-intent: ' + str(e)[:120])
         # yt-dlp en vivo: si una descarga previa dejo el motor nuevo, usarlo
         # primero (sys.path) antes de que cualquier thread importe yt_dlp.
         self._ensure_live_ytdlp()
