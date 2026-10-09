@@ -5,7 +5,7 @@ if not os.environ.get("ANDROID_ARGUMENT"):
 
 import crashlog
 crashlog.install_crash_handler()
-crashlog.write_log("=== Inicio main.py (fusionado) v2.0.63 ===")
+crashlog.write_log("=== Inicio main.py (fusionado) v2.0.64 ===")
 
 import sys
 import io
@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.63'
+APP_VERSION = '2.0.64'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -5366,6 +5366,40 @@ class M(ScreenManager):
             pass
         return True
 
+    def _check_apk_ready(self, apk_path):
+        """Pre-chequeos antes de instalar: archivo existente, tamano minimo,
+        ZIP valido con AndroidManifest y espacio libre (>=200 MB: APK +
+        staging del instalador). Devuelve '' si todo OK o el motivo."""
+        try:
+            if not apk_path or not os.path.isfile(apk_path):
+                return 'El archivo no se descargo completo.'
+            try:
+                _sz = os.path.getsize(apk_path)
+            except Exception:
+                _sz = 0
+            if _sz < 5 * 1024 * 1024:
+                return 'El archivo quedo trunco (muy chico).'
+            try:
+                import zipfile as _zf
+                with _zf.ZipFile(apk_path) as _z:
+                    if 'AndroidManifest.xml' not in _z.namelist():
+                        return 'El archivo esta corrupto (sin manifiesto).'
+            except Exception:
+                return 'El archivo esta corrupto (no abre como APK).'
+            if IS_ANDROID:
+                try:
+                    from jnius import autoclass as _ac0
+                    _sf = _ac0('android.os.StatFs')(apk_path)
+                    _free = _sf.getAvailableBytes()
+                    if _free and int(_free) < 200 * 1024 * 1024:
+                        return 'Poco espacio libre: libera al menos 200 MB.'
+                except Exception:
+                    pass
+            return ''
+        except Exception as e:
+            crashlog.write_log('Pre-chequeo APK: ' + str(e)[:120])
+            return ''
+
     def _launch_installer(self, apk_path, dlg):
         try:
             dlg.dismiss()
@@ -5403,9 +5437,19 @@ class M(ScreenManager):
             crashlog.write_log('Chequeo permiso instalacion: ' + str(e0)[:100])
             pass
         # v2.0.51: sesion directa (anda en Android nuevos).
-        # v2.0.52: sin fallback ACTION_VIEW (las URIs MediaStore dan "error de
-        # analisis" en Android nuevos: mejor mensaje manual directo).
+        # v2.0.64: pre-chequeos + fallback ACTION_VIEW si la sesion falla.
+        # El fallback solo corre cuando la sesion YA fallo: no puede empeorar.
+        # Abre el instalador del sistema con la URI publica (el "y listo" de
+        # antes); si tambien falla, queda el mensaje manual de siempre.
         try:
+            _pre = self._check_apk_ready(apk_path)
+            if _pre:
+                self._info('Archivo incompleto', _pre + '\nToca Actualizar de nuevo para re-descargarlo.')
+                try:
+                    os.remove(apk_path)
+                except Exception:
+                    pass
+                return
             if self._install_via_session(apk_path):
                 return
         except Exception as e:
@@ -5418,6 +5462,25 @@ class M(ScreenManager):
             except Exception as e2:
                 crashlog.write_log('Respaldo APK a Descargas fallo: ' + str(e2)[:120])
                 res = None
+            if res:
+                # v2.0.64: ultimo intento automatico con el instalador del
+                # sistema (URI publica + permiso de lectura). Si abre, listo.
+                try:
+                    from jnius import autoclass as _ac3
+                    _Intent3 = _ac3('android.content.Intent')
+                    _Uri3 = _ac3('android.net.Uri')
+                    _Py3 = _ac3('org.kivy.android.PythonActivity')
+                    _it = _Intent3(_Intent3.ACTION_VIEW)
+                    _it.setDataAndType(_Uri3.parse(res['uri']),
+                                       'application/vnd.android.package-archive')
+                    _it.addFlags(_Intent3.FLAG_GRANT_READ_URI_PERMISSION |
+                                 _Intent3.FLAG_ACTIVITY_NEW_TASK)
+                    _it.addCategory(_Intent3.CATEGORY_DEFAULT)
+                    _Py3.mActivity.startActivity(_it)
+                    crashlog.write_log('Fallback ACTION_VIEW lanzado OK')
+                    return
+                except Exception as e3:
+                    crashlog.write_log('Fallback ACTION_VIEW fallo: ' + str(e3)[:120])
             if res:
                 self._info('Instala el APK',
                            f'No se pudo iniciar la instalacion automatica ({err}).\n'
