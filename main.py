@@ -5,7 +5,7 @@ if not os.environ.get("ANDROID_ARGUMENT"):
 
 import crashlog
 crashlog.install_crash_handler()
-crashlog.write_log("=== Inicio main.py (fusionado) v2.0.68 ===")
+crashlog.write_log("=== Inicio main.py (fusionado) v2.0.69 ===")
 
 import sys
 import io
@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.68'
+APP_VERSION = '2.0.69'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -4819,6 +4819,7 @@ class M(ScreenManager):
             self._music_start_tick()
             self._music_update_notification(title, playing=True)
             self._music_wakelock(True)
+            self._media_update(full=True)
             return True
         except Exception as e:
             crashlog.write_log('Error reproduciendo audio: ' + str(e)[:150])
@@ -4958,6 +4959,178 @@ class M(ScreenManager):
             nm.notify(9999, builder.build())
         except Exception as e:
             crashlog.write_log('Notificacion error: ' + str(e)[:100])
+
+    # ─── TARJETA MULTIMEDIA DEL SISTEMA (MediaSession) ───────────────
+    # v2.0.69: publica titulo/autor/caratula/estado para que Android muestre
+    # la tarjeta en cortina y bloqueo (como YouTube Music), y recibe
+    # play/pausa/siguiente/anterior de auriculares BT y botones fisicos.
+    # Sin manifiesto ni permisos nuevos. Todo protegido con try/except.
+    def _media_ensure(self):
+        if not IS_ANDROID:
+            return None
+        if getattr(self, '_media_session', None) is not None:
+            return self._media_session
+        try:
+            from jnius import autoclass, PythonJavaClass, java_method
+            from kivy.clock import Clock as _Clock
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            act = PythonActivity.mActivity
+            MediaSession = autoclass('android.media.session.MediaSession')
+            session = MediaSession(act.getApplicationContext(), 'JonayoMusic')
+            mgr = self
+
+            class _CB(PythonJavaClass):
+                __javaclass__ = 'android/media/session/MediaSession$Callback'
+
+                @java_method('()V')
+                def onPlay(self):
+                    _Clock.schedule_once(lambda dt: mgr._media_cmd('play'))
+
+                @java_method('()V')
+                def onPause(self):
+                    _Clock.schedule_once(lambda dt: mgr._media_cmd('pause'))
+
+                @java_method('()V')
+                def onSkipToNext(self):
+                    _Clock.schedule_once(lambda dt: mgr._media_cmd('next'))
+
+                @java_method('()V')
+                def onSkipToPrevious(self):
+                    _Clock.schedule_once(lambda dt: mgr._media_cmd('prev'))
+
+                @java_method('(J)V')
+                def onSeekTo(self, pos):
+                    try:
+                        _Clock.schedule_once(lambda dt, p=int(pos): mgr.music_seek(p / 1000.0))
+                    except Exception:
+                        pass
+
+            try:
+                session.setCallback(_CB())
+            except Exception as e:
+                crashlog.write_log('MediaSession callback: ' + str(e)[:100])
+            try:
+                session.setActive(True)
+            except Exception:
+                pass
+            self._media_session = session
+            return session
+        except Exception as e:
+            crashlog.write_log('MediaSession crear: ' + str(e)[:120])
+            return None
+
+    def _media_cmd(self, what):
+        try:
+            if what == 'play' and not self._music_playing:
+                self.music_toggle()
+            elif what == 'pause' and self._music_playing:
+                self.music_toggle()
+            elif what == 'next':
+                self.music_next()
+            elif what == 'prev':
+                self.music_prev()
+        except Exception:
+            pass
+
+    def _media_art(self, item):
+        """Caratula desde el cache local de miniaturas (.thumbs/<id>.jpg)."""
+        try:
+            from jnius import autoclass
+            vid = ''
+            try:
+                vid = (item or {}).get('id') or ''
+            except Exception:
+                vid = ''
+            if not vid:
+                try:
+                    u = (item or {}).get('url') or ''
+                    if 'v=' in u:
+                        vid = u.split('v=')[1].split('&')[0]
+                except Exception:
+                    pass
+            if not vid:
+                return None
+            p = os.path.join(self._thumb_cache_path(), vid + '.jpg')
+            if not (os.path.isfile(p) and os.path.getsize(p) > 500):
+                return None
+            return autoclass('android.graphics.BitmapFactory').decodeFile(p)
+        except Exception:
+            return None
+
+    def _media_update(self, full=False):
+        try:
+            session = self._media_ensure()
+            if session is None:
+                return
+            try:
+                session.setActive(True)
+            except Exception:
+                pass
+            if not full:
+                try:
+                    import time as _t
+                    _last = getattr(self, '_media_last', 0) or 0
+                    if _t.time() - _last < 2:
+                        return
+                    self._media_last = _t.time()
+                except Exception:
+                    pass
+            from jnius import autoclass
+            playing = bool(getattr(self, '_music_playing', False))
+            try:
+                item = {}
+                q = getattr(self, '_music_queue', []) or []
+                i = getattr(self, '_music_idx', -1)
+                if 0 <= i < len(q):
+                    item = q[i] or {}
+            except Exception:
+                item = {}
+            title = safe_text((item or {}).get('title', ''), 'Jonayo Music')
+            artist = safe_text((item or {}).get('channel', ''), '')
+            try:
+                snd = getattr(self, '_music_sound', None)
+                pos = (snd.get_pos() or 0) if snd else 0
+                _ln = getattr(snd, 'length', 0) if snd else 0
+                dur = _ln or 0
+            except Exception:
+                pos, dur = 0, 0
+            try:
+                PS = autoclass('android.media.session.PlaybackState')
+                st = PS.Builder()
+                st.setActions(int(PS.ACTION_PLAY | PS.ACTION_PAUSE | PS.ACTION_PLAY_PAUSE
+                                  | PS.ACTION_SKIP_TO_NEXT | PS.ACTION_SKIP_TO_PREVIOUS
+                                  | PS.ACTION_SEEK_TO))
+                st.setState(PS.STATE_PLAYING if playing else PS.STATE_PAUSED,
+                            int(max(0, pos) * 1000), 1.0)
+                session.setPlaybackState(st.build())
+            except Exception as e:
+                crashlog.write_log('MediaSession estado: ' + str(e)[:100])
+            if full:
+                try:
+                    MD = autoclass('android.media.MediaMetadata')
+                    mb = MD.Builder()
+                    mb.putString(MD.METADATA_KEY_TITLE, title[:100])
+                    if artist:
+                        mb.putString(MD.METADATA_KEY_ARTIST, artist[:100])
+                    art = self._media_art(item)
+                    if art is not None:
+                        mb.putBitmap(MD.METADATA_KEY_ART, art)
+                    session.setMetadata(mb.build())
+                except Exception as e:
+                    crashlog.write_log('MediaSession metadata: ' + str(e)[:100])
+        except Exception as e:
+            crashlog.write_log('MediaSession update: ' + str(e)[:120])
+
+    def _media_release(self):
+        try:
+            s = getattr(self, '_media_session', None)
+            if s is not None:
+                try:
+                    s.setActive(False)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def _music_fallback_download(self, item):
         """Plan B: baja el audio a una carpeta temporal y lo reproduce local.
@@ -5106,6 +5279,10 @@ class M(ScreenManager):
                     fm = lambda x: "{}:{:02d}".format(int(x // 60), int(x % 60))
                     screen._mp_time.text = fm(pos) + ' / ' + (fm(dur) if dur else '0:00')
                 screen.update_player_tick(pos, dur)
+                try:
+                    self._media_update()
+                except Exception:
+                    pass
             except Exception:
                 pass
         self._music_tick = Clock.schedule_interval(_tick, 0.5)
@@ -5137,6 +5314,7 @@ class M(ScreenManager):
             screen.show_mini_player('Cola finalizada', playing=False)
             self._music_update_notification('Cola finalizada', playing=False)
             self._music_wakelock(False)
+            self._media_update()
             if self._music_tick:
                 try:
                     self._music_tick.cancel()
@@ -5160,6 +5338,7 @@ class M(ScreenManager):
             screen.show_mini_player(_t, playing=False)
             self._music_update_notification(_t, playing=False)
             self._music_wakelock(False)
+            self._media_update()
         else:
             snd.play()
             self._music_playing = True
@@ -5171,6 +5350,7 @@ class M(ScreenManager):
             screen.show_mini_player(_t, playing=True)
             self._music_update_notification(_t, playing=True)
             self._music_wakelock(True)
+            self._media_update()
             self._music_start_tick()
 
     def music_next(self):
@@ -5217,6 +5397,7 @@ class M(ScreenManager):
 
     def music_stop(self):
         self._music_stop_internal()
+        self._media_release()
         screen = self.get_screen('music')
         screen.hide_mini_player()
         if IS_ANDROID:
