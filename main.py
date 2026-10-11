@@ -5,7 +5,7 @@ if not os.environ.get("ANDROID_ARGUMENT"):
 
 import crashlog
 crashlog.install_crash_handler()
-crashlog.write_log("=== Inicio main.py (fusionado) v2.0.65 ===")
+crashlog.write_log("=== Inicio main.py (fusionado) v2.0.66 ===")
 
 import sys
 import io
@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.65'
+APP_VERSION = '2.0.66'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -543,7 +543,8 @@ class NavItem(ClickableBox):
         self.add_widget(Image(source=icon(icon_name), size_hint=(None, None), size=(dp(26), dp(26)),
                               keep_ratio=True, pos_hint={'center_x': 0.5}))
         self.add_widget(Label(text=safe_text(text), color=RED if active else MUTED, font_size=sp(9.8), bold=True,
-                               size_hint_y=None, height=dp(22), halign='center', valign='middle', text_size=(None, None)))
+                               size_hint_y=None, height=dp(22), halign='center', valign='middle', text_size=(None, None),
+                               shorten=True, shorten_from='right'))
         if on_release_cb:
             self.bind(on_release=lambda *_: on_release_cb())
 
@@ -715,7 +716,7 @@ class Nav(BoxLayout):
         super().__init__(orientation='horizontal', size_hint_y=None, height=dp(78),
                          padding=(dp(8), dp(6)), spacing=dp(6), **kw)
         rr(self, NAV, 0)
-        for img, text, name in [('home','Inicio','home'), ('download','Descargas','downloads'), ('music','Música','music'), ('settings','Ajustes','settings')]:
+        for img, text, name in [('home','Inicio','home'), ('download','Descargas','downloads'), ('music','Escuchar música','music'), ('settings','Ajustes','settings')]:
             item = NavItem(img, text, active=(name == active), size_hint=(1, 1),
                            on_release_cb=lambda n=name, s=screen: self._go(s, n))
             self.add_widget(item)
@@ -1073,8 +1074,10 @@ class MusicRow(ClickableBox):
         self.play_btn.bind(on_release=lambda *_: self.manager.music_queue_add(self.item))
         self.add_widget(self.play_btn)
         dl = B(text='', size_hint=(None, None), size=(dp(40), dp(40)))
-        rr(dl, RED, 20)
-        btn_img(dl, 'dl', dp(18))
+        # v2.0.66: fondo oscuro (el glifo nuevo es rojo brillante: sobre
+        # circulo rojo no se leia). Mismo estilo que el boton play.
+        rr(dl, SUR2, 12, BORDER)
+        btn_img(dl, 'dl', dp(20))
         self.add_widget(dl)
         dl.bind(on_release=lambda *_: self.manager.music_download(self.item))
     def _on_state(self, _, value):
@@ -1090,7 +1093,7 @@ class MusicRow(ClickableBox):
         # Compatibilidad: mantener referencia por si se usa externamente
         self._external_play_cb = cb
     def set_playing(self, playing):
-        set_icon(self.play_img, 'stop' if playing else 'play')
+        set_icon(self.play_img, 'pause' if playing else 'play')
 
 
 class Music(Base):
@@ -1114,7 +1117,7 @@ class Music(Base):
         btn_img(b, 'back', dp(18))
         b.bind(on_release=lambda *_: self.manager.go('home'))
         h.add_widget(b)
-        h.add_widget(Label(text='Musica', color=WHITE, font_size=sp(16), bold=True, halign='left'))
+        h.add_widget(Label(text='Escuchar música', color=WHITE, font_size=sp(16), bold=True, halign='left'))
         fav_b = B(text='', size_hint_x=None, width=dp(38))
         rr(fav_b, SUR2, 10, BORDER)
         btn_img(fav_b, 'heart', dp(19))
@@ -1132,16 +1135,26 @@ class Music(Base):
         box.bind(minimum_height=box.setter('height')); self.results_box = box; c.add_widget(box)
 
     def _build_mini_player(self):
-        self._mp = mp = BoxLayout(orientation='vertical', size_hint=(1, None), height=dp(80),
+        self._mp = mp = BoxLayout(orientation='vertical', size_hint=(1, None), height=dp(86),
                                   pos_hint={'bottom': 1}, opacity=0)
         rr(mp, (0, 0, 0, 0.92), 0)
-        # v2.0.55: manija central en el borde superior: avisa que deslizando
-        # hacia arriba se abre el reproductor (tambien abre con tap).
-        handle_row = BoxLayout(size_hint_y=None, height=dp(16), spacing=dp(6))
+        # v2.0.66: manija ancha con DOBLE flecha ^^ (se ve que se desliza).
+        handle_row = BoxLayout(size_hint_y=None, height=dp(22), spacing=dp(6))
         handle_row.add_widget(Widget())
-        handle_b = B(text='', size_hint=(None, None), size=(dp(64), dp(16)))
-        rr(handle_b, (1, 1, 1, 0.12), 8, None)
-        btn_chevron(handle_b, 'up', dp(11))
+        handle_b = B(text='', size_hint=(None, None), size=(dp(84), dp(22)))
+        rr(handle_b, (1, 1, 1, 0.12), 11, None)
+        _chev_box = BoxLayout(orientation='vertical', size_hint=(None, None),
+                              size=(dp(34), dp(20)), spacing=-dp(7))
+        _chev_box.add_widget(Chevron('up', size_hint=(None, None), size=(dp(34), dp(13))))
+        _chev_box.add_widget(Chevron('up', size_hint=(None, None), size=(dp(34), dp(13))))
+        def _sync_chev(*_):
+            try:
+                _chev_box.center = handle_b.center
+            except Exception:
+                pass
+        handle_b.bind(pos=_sync_chev, size=_sync_chev)
+        Clock.schedule_once(lambda dt: _sync_chev(), 0)
+        handle_b.add_widget(_chev_box)
         handle_b.bind(on_release=lambda *_: self.show_player())
         handle_row.add_widget(handle_b)
         handle_row.add_widget(Widget())
@@ -1166,7 +1179,8 @@ class Music(Base):
         self._mp_prev.bind(on_release=lambda *_: self.manager.music_prev())
         bot_row.add_widget(self._mp_prev)
         self._mp_play = B(text='', size_hint_x=None, width=dp(38))
-        coin_bg(self._mp_play, dp(38))
+        # v2.0.66: chip oscuro (el PNG play nuevo ya trae su fondo rojo).
+        rr(self._mp_play, SUR2, 17, BORDER)
         self._mp_play_img = btn_img(self._mp_play, 'pause', dp(17))
         self._mp_play.bind(on_release=lambda *_: self.manager.music_toggle())
         bot_row.add_widget(self._mp_play)
@@ -1233,6 +1247,36 @@ class Music(Base):
             return res
         mp.on_touch_down = _mp_down
         mp.on_touch_up = _mp_up
+        # v2.0.66: arrastre real (on_touch_move): si el dedo sube >56dp con
+        # direccion vertical, se abre al instante sin esperar a soltar. Si un
+        # hijo agarro el toque (scroll/slider) no se interfiere.
+        _orig_move = mp.on_touch_move
+
+        def _mp_move(touch):
+            try:
+                t = self._mp_touch
+                if t is not None and not t[3] and self._mp_visible and mp.opacity > 0:
+                    try:
+                        gl = getattr(touch, 'grab_list', None) or []
+                        if len(gl) > 0:
+                            t[3] = True
+                    except Exception:
+                        pass
+                    if not t[3]:
+                        try:
+                            dy = touch.y - t[1]
+                            dx = abs(touch.x - t[0])
+                        except Exception:
+                            dy, dx = 0, 0
+                        if dy > dp(56) and dy > dx:
+                            t[3] = True
+                            self.show_player()
+                            return True
+            except Exception:
+                pass
+            return _orig_move(touch)
+
+        mp.on_touch_move = _mp_move
 
     def show_mini_player(self, title, playing=True):
         self._mp_title.text = title
@@ -1355,7 +1399,7 @@ class Music(Base):
         prevb.bind(on_release=lambda *_: mgr.music_prev())
         ctr.add_widget(prevb)
         playb = B(text='', size_hint_x=None, width=dp(70))
-        coin_bg(playb, dp(70))
+        rr(playb, SUR2, 24, BORDER)
         self._pl_play_img = btn_img(playb, 'pause', dp(30))
         playb.bind(on_release=lambda *_: mgr.music_toggle())
         ctr.add_widget(playb)
@@ -3206,7 +3250,7 @@ class M(ScreenManager):
                              padding=(dp(12),dp(6)))
             rr(bottom,(0,0,0,0.50),0)
             pb=B(text='',size_hint_x=None,width=dp(40))
-            coin_bg(pb, dp(40))
+            rr(pb, (1,1,1,0.14), 20, None)
             pb_img=btn_img(pb,'pause',dp(18))
             prev=B(text='',size_hint_x=None,width=dp(38)); rr(prev,(1,1,1,0.14),19,None); btn_img(prev,'prev',dp(17))
             nxt=B(text='',size_hint_x=None,width=dp(38)); rr(nxt,(1,1,1,0.14),19,None); btn_img(nxt,'next',dp(17))
@@ -4437,7 +4481,7 @@ class M(ScreenManager):
             ctrl = BoxLayout(size_hint=(1, None), height=dp(50), spacing=dp(10), padding=(dp(12), dp(6)))
             rr(ctrl, (0, 0, 0, 0.50), 0)
             pb = B(text='', size_hint_x=None, width=dp(40))
-            coin_bg(pb, dp(40))
+            rr(pb, (1,1,1,0.14), 20, None)
             pb_img = btn_img(pb, 'pause', dp(18))
 
             def _seek_audio_file(val):
