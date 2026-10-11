@@ -6,8 +6,8 @@ package.domain = org.jonayo
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 
-version = 2.0.66
-version.release = 66
+version = 2.0.67
+version.release = 67
 
 # Requisitos. ffmpeg se compila desde la recipe local (6.1.2) de python-for-android
 # python3/hostpython3 pineados a 3.12.14 OBLIGATORIO: ffpyplayer 4.5.1 trae
@@ -22,7 +22,7 @@ requirements = python3==3.12.14,hostpython3==3.12.14,kivy==2.3.1,yt-dlp>=2026.08
 
 orientation = portrait
 fullscreen = 0
-android.permissions = INTERNET,REQUEST_INSTALL_PACKAGES
+android.permissions = INTERNET,REQUEST_INSTALL_PACKAGES,WAKE_LOCK
 android.api = 33
 # minapi 24 (Android 7.0) OBLIGATORIO: el target NDK de las libs nativas es = minapi,
 # y bionic solo declara getgrent/setgrent/endgrent desde API 24. Con 21, el modulo grp

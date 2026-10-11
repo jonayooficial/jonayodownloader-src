@@ -5,7 +5,7 @@ if not os.environ.get("ANDROID_ARGUMENT"):
 
 import crashlog
 crashlog.install_crash_handler()
-crashlog.write_log("=== Inicio main.py (fusionado) v2.0.66 ===")
+crashlog.write_log("=== Inicio main.py (fusionado) v2.0.67 ===")
 
 import sys
 import io
@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.66'
+APP_VERSION = '2.0.67'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -1982,6 +1982,10 @@ def _patch_ytdlp_write_string():
 
 
 INSTALL_RESULT_ACTION = 'org.jonayo.jonayodownloader2.INSTALL_RESULT'
+MUSIC_OPEN_ACTION = 'org.jonayo.jonayodownloader2.MUSIC_OPEN'
+MUSIC_TOGGLE_ACTION = 'org.jonayo.jonayodownloader2.MUSIC_TOGGLE'
+MUSIC_NEXT_ACTION = 'org.jonayo.jonayodownloader2.MUSIC_NEXT'
+MUSIC_PREV_ACTION = 'org.jonayo.jonayodownloader2.MUSIC_PREV'
 
 
 def friendly_error(msg):
@@ -4810,12 +4814,47 @@ class M(ScreenManager):
             self.get_screen('music').show_mini_player(title, playing=True)
             self._music_start_tick()
             self._music_update_notification(title, playing=True)
+            self._music_wakelock(True)
             return True
         except Exception as e:
             crashlog.write_log('Error reproduciendo audio: ' + str(e)[:150])
             self._music_sound = None
             self._music_playing = False
             return False
+
+    def _music_wakelock(self, on):
+        """Mantiene la CPU despierta mientras suena musica (segundo plano).
+        Sin esto Android duerme el proceso y el audio se corta al salir."""
+        if not IS_ANDROID:
+            return
+        try:
+            from jnius import autoclass
+            if on:
+                if getattr(self, '_wl', None) is None:
+                    _pm = autoclass('android.os.PowerManager')
+                    _ctx = autoclass('org.kivy.android.PythonActivity').mActivity.getApplicationContext()
+                    self._wl = _ctx.getSystemService(
+                        autoclass('android.content.Context').POWER_SERVICE).newWakeLock(
+                        _pm.PARTIAL_WAKE_LOCK, 'Jonayo:MusicLock')
+                    try:
+                        self._wl.setReferenceCounted(False)
+                    except Exception:
+                        pass
+                try:
+                    if not self._wl.isHeld():
+                        self._wl.acquire()
+                except Exception:
+                    pass
+            else:
+                _wl = getattr(self, '_wl', None)
+                if _wl is not None:
+                    try:
+                        if _wl.isHeld():
+                            _wl.release()
+                    except Exception:
+                        pass
+        except Exception as e:
+            crashlog.write_log('WakeLock: ' + str(e)[:100])
 
     def _music_status(self, txt):
         """Muestra estado de carga en el titulo del mini player."""
@@ -4825,15 +4864,17 @@ class M(ScreenManager):
             pass
 
     def _music_update_notification(self, title='', playing=True):
-        """Muestra/actualiza una notificacion de media en Android con controles basicos."""
+        """Notificacion multimedia con botones que SI funcionan: Anterior /
+        Pausar-Seguir / Siguiente (vuelven a la app con acciones propias) y
+        tap que abre la app. v2.0.67: antes el unico boton nunca se agregaba
+        y el tap apuntaba a una clase inexistente."""
         if not IS_ANDROID:
             return
         try:
-            from jnius import autoclass, JavaRunnable
+            from jnius import autoclass
             Context = autoclass('android.content.Context')
             NotificationManager = autoclass('android.app.NotificationManager')
             Build = autoclass('android.os.Build')
-            # Android 8.0+ necesita canal; en 7.x no existe
             if int(str(Build.VERSION.SDK_INT)) >= 26:
                 NotificationChannel = autoclass('android.app.NotificationChannel')
             else:
@@ -4854,11 +4895,16 @@ class M(ScreenManager):
                 channel = NotificationChannel(CHANNEL_ID, 'Reproductor', NotificationManager.IMPORTANCE_LOW)
                 nm.createNotificationChannel(channel)
                 self._notification_channel_created = True
-            open_intent = Intent(Intent.ACTION_VIEW)
-            open_intent.setClassName(act, act.getPackageName() + '.org.kivy.android.PythonActivity')
-            flags = PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
-            pending_open = PendingIntent.getActivity(act, 0, open_intent, flags)
-            pause_action = NotificationCompat.Action(0, 'Pausar', pending_open)
+
+            def _pi(action, code):
+                it = Intent()
+                it.setClassName(act, 'org.kivy.android.PythonActivity')
+                it.setAction(action)
+                it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                flags = PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                return PendingIntent.getActivity(act, code, it, flags)
+
+            pending_open = _pi(MUSIC_OPEN_ACTION, 100)
             builder = NotificationCompat.Builder(ctx, CHANNEL_ID)
             builder.setSmallIcon(Icon.ic_media_play)
             builder.setContentTitle('Jonayo Music')
@@ -4866,6 +4912,10 @@ class M(ScreenManager):
             builder.setContentIntent(pending_open)
             builder.setAutoCancel(False)
             builder.setOngoing(playing)
+            builder.setOnlyAlertOnce(True)
+            builder.addAction(0, 'Anterior', _pi(MUSIC_PREV_ACTION, 101))
+            builder.addAction(0, 'Pausar' if playing else 'Seguir', _pi(MUSIC_TOGGLE_ACTION, 102))
+            builder.addAction(0, 'Siguiente', _pi(MUSIC_NEXT_ACTION, 103))
             nm.notify(9999, builder.build())
         except Exception as e:
             crashlog.write_log('Notificacion error: ' + str(e)[:100])
@@ -5046,6 +5096,8 @@ class M(ScreenManager):
         else:
             screen = self.get_screen('music')
             screen.show_mini_player('Cola finalizada', playing=False)
+            self._music_update_notification('Cola finalizada', playing=False)
+            self._music_wakelock(False)
             if self._music_tick:
                 try:
                     self._music_tick.cancel()
@@ -5061,13 +5113,25 @@ class M(ScreenManager):
             self._music_suppress_stop = True
             snd.stop()
             self._music_playing = False
+            try:
+                _t = self._music_queue[self._music_idx].get('title', '')
+            except Exception:
+                _t = ''
             screen = self.get_screen('music')
-            screen.show_mini_player(self._music_queue[self._music_idx].get('title', ''), playing=False)
+            screen.show_mini_player(_t, playing=False)
+            self._music_update_notification(_t, playing=False)
+            self._music_wakelock(False)
         else:
             snd.play()
             self._music_playing = True
+            try:
+                _t = self._music_queue[self._music_idx].get('title', '')
+            except Exception:
+                _t = ''
             screen = self.get_screen('music')
-            screen.show_mini_player(self._music_queue[self._music_idx].get('title', ''), playing=True)
+            screen.show_mini_player(_t, playing=True)
+            self._music_update_notification(_t, playing=True)
+            self._music_wakelock(True)
             self._music_start_tick()
 
     def music_next(self):
@@ -5188,6 +5252,7 @@ class M(ScreenManager):
             except Exception:
                 pass
             self._music_tick = None
+        self._music_wakelock(False)
         if self._music_sound:
             self._music_suppress_stop = True
             try:
@@ -5789,7 +5854,27 @@ class AppMain(App):
 
                 def _on_new_intent(*args):
                     try:
-                        m._handle_install_intent(args[0] if args else None)
+                        _intent = args[0] if args else None
+                        _routed = False
+                        try:
+                            _a = _intent.getAction() if _intent is not None else None
+                        except Exception:
+                            _a = None
+                        # v2.0.67: botones de la notificacion multimedia.
+                        if _a in (MUSIC_TOGGLE_ACTION, MUSIC_NEXT_ACTION,
+                                  MUSIC_PREV_ACTION, MUSIC_OPEN_ACTION):
+                            try:
+                                if _a == MUSIC_TOGGLE_ACTION:
+                                    m.music_toggle()
+                                elif _a == MUSIC_NEXT_ACTION:
+                                    m.music_next()
+                                elif _a == MUSIC_PREV_ACTION:
+                                    m.music_prev()
+                            except Exception:
+                                pass
+                            _routed = True
+                        if not _routed:
+                            m._handle_install_intent(_intent)
                     except Exception:
                         pass
                 _act.bind(on_new_intent=_on_new_intent)
