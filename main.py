@@ -5,7 +5,7 @@ if not os.environ.get("ANDROID_ARGUMENT"):
 
 import crashlog
 crashlog.install_crash_handler()
-crashlog.write_log("=== Inicio main.py (fusionado) v2.0.67 ===")
+crashlog.write_log("=== Inicio main.py (fusionado) v2.0.68 ===")
 
 import sys
 import io
@@ -80,7 +80,7 @@ ORANGE  = (1.0, 0.65, 0.08, 1)
 ERR     = (1.0, 0.28, 0.32, 1)
 DORADO  = (1.0, 0.75, 0.10, 1)
 APP_NAME = 'J Youtube Downloader'
-APP_VERSION = '2.0.67'
+APP_VERSION = '2.0.68'
 LOGO = 'assets/logo.png'
 ICONS = 'assets/icons/'
 PICON = 'assets/icons/player/'
@@ -4704,6 +4704,10 @@ class M(ScreenManager):
     def music_queue_add(self, item, row=None):
         """Agrega una cancion a la cola y la reproduce enseguida (el boton es
         reproducir: si ya sonaba otra, se interrumpe y suena la elegida)."""
+        try:
+            self._ensure_notif_permission()
+        except Exception:
+            pass
         self._music_queue.append(dict(item))
         idx = len(self._music_queue) - 1
         self._music_play_idx(idx)
@@ -4855,6 +4859,41 @@ class M(ScreenManager):
                         pass
         except Exception as e:
             crashlog.write_log('WakeLock: ' + str(e)[:100])
+
+    def _ensure_notif_permission(self):
+        """Pide permiso de notificaciones en Android 13+ (API 33). Sin el, el
+        sistema descarta las notificaciones en silencio y el reproductor nunca
+        aparece en la cortina. Se pide al dar play por primera vez."""
+        if not IS_ANDROID:
+            return True
+        try:
+            from jnius import autoclass
+            Build = autoclass('android.os.Build$VERSION')
+            if int(str(Build.SDK_INT)) < 33:
+                return True
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            PM = autoclass('android.content.pm.PackageManager')
+            try:
+                granted = (int(str(PythonActivity.mActivity.checkSelfPermission(
+                    'android.permission.POST_NOTIFICATIONS')))
+                    == int(str(PM.PERMISSION_GRANTED)))
+            except Exception:
+                granted = True
+            if granted:
+                return True
+            try:
+                from android.permissions import request_permissions
+                request_permissions(['android.permission.POST_NOTIFICATIONS'])
+            except Exception:
+                try:
+                    PythonActivity.mActivity.requestPermissions(
+                        ['android.permission.POST_NOTIFICATIONS'], 9001)
+                except Exception:
+                    pass
+            return False
+        except Exception as e:
+            crashlog.write_log('Permiso notif: ' + str(e)[:100])
+            return True
 
     def _music_status(self, txt):
         """Muestra estado de carga en el titulo del mini player."""
